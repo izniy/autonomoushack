@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Triad — disruption negotiation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f3f5f8; --panel:#ffffff; --panel2:#eaeef4; --line:#d4dbe5; --ink:#17212b; --ink2:#55657a; --ink3:#8291a6;
+  --accent:#c77800; --accent-ink:#8a5200;
+  --ok:#1e8e5a; --ok-bg:#e3f5ec; --bad:#c23b3b; --bad-bg:#fbe7e7; --warn:#b8860b; --warn-bg:#fff4d6;
+  --atc:#0d7c86; --pilot:#4b56c8; --ground:#9a6700;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light dark;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#0f141a; --panel:#171e27; --panel2:#1f2833; --line:#2c3845; --ink:#e6ebf2; --ink2:#a4b1c2; --ink3:#6f7d90;
+  --accent:#f0a030; --accent-ink:#f5b85a;
+  --ok:#3fbf7f; --ok-bg:#153324; --bad:#f06a6a; --bad-bg:#3a1d1d; --warn:#e0b040; --warn-bg:#3a3010;
+  --atc:#3fc1cc; --pilot:#8d95ff; --ground:#e0b040;
+}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans)}
+h1,h2,h3{margin:0;font-weight:600;text-wrap:balance}
+h1{font-size:16px;letter-spacing:.01em}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink2)}
+h3{font-size:14px}
+code,.mono{font-family:var(--mono);font-size:12.5px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:6px 12px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+input[type=number]{width:84px}
+header{display:flex;gap:16px;align-items:center;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+header .brand{display:flex;flex-direction:column;margin-right:8px}
+header .brand small{color:var(--ink3);font-size:11.5px}
+header form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+header label{display:flex;flex-direction:column;font-size:11px;color:var(--ink3);gap:2px;text-transform:uppercase;letter-spacing:.06em}
+.status{margin-left:auto;display:flex;gap:10px;align-items:center;color:var(--ink2);font-size:12.5px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--ink3);display:inline-block}
+.dot.live{background:var(--ok);animation:pulse 1.2s infinite}
+.dot.err{background:var(--bad)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+@media (prefers-reduced-motion:reduce){.dot.live{animation:none}}
+main{display:grid;grid-template-columns:340px 1fr;gap:16px;padding:16px 20px;max-width:1700px;margin:0 auto}
+@media (max-width:1100px){main{grid-template-columns:1fr}}
+aside,section.flow{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.card h2{margin-bottom:10px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:13px}
+.kv dt{color:var(--ink3)}
+.kv dd{margin:0}
+.badge{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);color:var(--ink2);vertical-align:middle;letter-spacing:.03em;text-transform:uppercase}
+.badge.real{color:var(--ok);border-color:var(--ok)}
+.badge.derived{color:var(--accent-ink);border-color:var(--accent)}
+.badge.synthetic{color:var(--ink3);border-style:dashed}
+.chip{display:inline-block;font-weight:600;font-size:11.5px;padding:2px 8px;border-radius:999px;background:var(--panel2);color:var(--ink2)}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}
+.chip.bad{background:var(--bad-bg);color:var(--bad)}
+.chip.warn{background:var(--warn-bg);color:var(--warn)}
+.chip.ATC{color:var(--atc)} .chip.PILOT{color:var(--pilot)} .chip.GROUND{color:var(--ground)}
+.rules{display:flex;flex-direction:column;gap:6px}
+.rule{display:grid;grid-template-columns:14px 1fr;gap:8px;font-size:12.5px;align-items:start}
+.rule .m{width:10px;height:10px;border-radius:2px;margin-top:4px;background:var(--ok)}
+.rule.bad .m{background:var(--bad)}
+.rule .d{color:var(--ink3);font-size:11.5px}
+.round{border-left:3px solid var(--line);padding-left:14px}
+.round.final{border-left-color:var(--accent)}
+.round-head{display:flex;gap:12px;align-items:baseline;margin-bottom:8px;flex-wrap:wrap}
+.round-head .on{color:var(--ink2);font-size:12.5px}
+.cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+@media (max-width:800px){.cols{grid-template-columns:1fr}}
+.agent{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--panel);display:flex;flex-direction:column;gap:6px;min-height:118px;border-top-width:3px}
+.agent.ATC{border-top-color:var(--atc)} .agent.PILOT{border-top-color:var(--pilot)} .agent.GROUND{border-top-color:var(--ground)}
+.agent .who{display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:12.5px}
+.agent .who small{color:var(--ink3);font-weight:400}
+.agent .msg{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.agent .rat{color:var(--ink2);font-size:12.5px}
+.agent .ruling{font-size:12px;border-top:1px dashed var(--line);padding-top:6px;color:var(--ink2)}
+.agent .ruling b{color:var(--ink)}
+.agent .pending{color:var(--ink3);font-style:italic}
+.round-foot{margin-top:8px;font-size:12.5px;color:var(--ink2)}
+.bars{display:grid;grid-template-columns:70px 1fr 54px;gap:4px 10px;align-items:center;font-size:12.5px}
+.bar{height:10px;background:var(--panel2);border-radius:3px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent)}
+.bar.ATC i{background:var(--atc)} .bar.PILOT i{background:var(--pilot)} .bar.GROUND i{background:var(--ground)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+.decision{border:2px solid var(--accent);background:var(--panel)}
+.decision .src{font-size:18px;font-weight:600}
+.decision .fb{color:var(--warn)}
+.human{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.human textarea{flex:1 1 220px;min-height:34px}
+.ledger{max-height:280px;overflow:auto;font-size:11.5px}
+table{border-collapse:collapse;width:100%}
+th,td{text-align:left;padding:3px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--ink3);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0;background:var(--panel)}
+td.num,th.num{text-align:right}
+.scroll{overflow-x:auto}
+.muted{color:var(--ink3)}
+.err{color:var(--bad)}
+details summary{cursor:pointer;color:var(--ink2);font-size:12.5px}
+.tabs{display:flex;gap:4px}
+.tabs button[aria-selected=true]{background:var(--panel2);font-weight:600}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><h1>Triad</h1><small>ATC · Pilot · Ground — negotiated disruption recovery, decided by rule</small></div>
+  <form id="start">
+    <label>seed<input type="number" name="seed" placeholder="random"></label>
+    <label>agents<select name="mode">
+      <option value="llm">live model</option><option value="yielding">stub: yielding</option>
+      <option value="greedy">stub: greedy</option><option value="agreeable">stub: agreeable</option>
+      <option value="stubborn">stub: stubborn</option><option value="reckless">stub: reckless</option>
+      <option value="flaky">stub: flaky</option><option value="broken">stub: broken</option></select></label>
+    <label>model<input name="model" placeholder="default"></label>
+    <label>&nbsp;<button class="primary" type="submit" id="go">Negotiate</button></label>
+  </form>
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="run">Run</button>
+    <button role="tab" aria-selected="false" data-tab="eval">Evaluation</button>
+  </div>
+  <div class="status"><span class="dot" id="dot"></span><span id="status">idle</span></div>
+</header>
+
+<main id="tab-run">
+  <aside>
+    <div class="card" id="scenario"><h2>Scenario</h2><p class="muted">Start a negotiation to load a disruption from the DOT 2015 on-time data.</p></div>
+    <div class="card" id="space" hidden><h2>Decision space</h2><div class="kv" id="space-kv"></div></div>
+    <div class="card" id="rules" hidden><h2>Hard rules vs. proposal on the table</h2><div class="rules" id="rules-list"></div></div>
+    <div class="card" id="ledger-card" hidden>
+      <h2>Ledger <span class="muted" id="ledger-n"></span></h2>
+      <div class="ledger scroll"><table><thead><tr><th>#</th><th>rnd</th><th>actor</th><th>type</th><th>hash</th></tr></thead><tbody id="ledger-body"></tbody></table></div>
+      <div class="human"><button id="verify">Verify chain</button><span id="verify-out" class="muted"></span>
+        <a id="audit-md" class="muted" target="_blank" hidden>audit.md</a><a id="audit-json" class="muted" target="_blank" hidden>audit.json</a></div>
+    </div>
+  </aside>
+  <section class="flow">
+    <div id="rounds" class="card" hidden><h2>Negotiation</h2><div id="rounds-body" style="display:flex;flex-direction:column;gap:16px"></div></div>
+    <div id="decision" class="card decision" hidden></div>
+    <div id="error" class="card err" hidden></div>
+  </section>
+</main>
+
+<main id="tab-eval" hidden style="grid-template-columns:1fr">
+  <div class="card"><h2>Latest evaluation <span class="muted" id="eval-tag"></span></h2>
+    <p class="muted" style="margin:0 0 10px">Runs over seeds disjoint from the demo seeds. Stub arms show what the judge does with scripted behaviour; a live arm shows what the model adds — or does not.</p>
+    <div class="scroll"><table id="eval-table"></table></div>
+    <details id="eval-config"><summary>configuration</summary><pre class="mono" id="eval-config-pre"></pre></details>
+  </div>
+</main>
+
+<script>
+const PARTIES=["ATC","PILOT","GROUND"];
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=n=>Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
+const key=p=>p?[p.slot_id,p.pilot_action,p.gate,p.crew_plan].join("|"):"";
+const pct=v=>(100*v).toFixed(0)+"%",f0=v=>fmt(v),f2=v=>Number(v).toFixed(2);
+const hhmm=m=>`${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+
+let state=null;
+function reset(){state={runId:null,scenario:null,rounds:{},onTable:null,current:null,outcome:null,human:null,entries:[],es:null};
+  for(const id of["space","rules","ledger-card","rounds","decision","error"])$("#"+id).hidden=true;
+  $("#rounds-body").innerHTML="";$("#ledger-body").innerHTML="";$("#verify-out").textContent="";}
+
+function setStatus(text,cls){$("#status").textContent=text;$("#dot").className="dot "+(cls||"");}
+
+// ---------------------------------------------------------------- scenario
+function renderScenario(d){
+  const s=d.scenario,f=s.flight,pv=s.provenance||{};
+  const b=k=>`<span class="badge ${pv[k]||'synthetic'}">${pv[k]||"synthetic"}</span>`;
+  $("#scenario").innerHTML=`<h2>Scenario <span class="muted mono">${esc(s.id)} · seed ${s.seed}</span></h2>
+  <h3>${esc(f.airline_name)} ${esc(f.airline)}${f.number} ${esc(f.origin)}→${esc(f.dest)} ${b("flight")}</h3>
+  <p style="margin:6px 0 10px;color:var(--ink2)">${esc(s.disruption.note)}</p>
+  <dl class="kv">
+    <dt>trigger</dt><dd>${esc(s.disruption.trigger)} — weather ${f.weather_delay_min} min, late aircraft ${f.late_aircraft_delay_min} min ${b("disruption.trigger")}</dd>
+    <dt>aircraft</dt><dd>${esc(s.aircraft.name)} · ${s.aircraft.wake} · ${s.aircraft.seats} seats ${b("aircraft")}</dd>
+    <dt>ETA</dt><dd>${hhmm(s.pilot.eta_min)} (sched ${esc(f.sched_arr)}, +${f.departure_delay_min} off ${esc(f.origin)})</dd>
+    <dt>arrival rate</dt><dd>${s.atc.effective_aar_per_15}/15 min of nominal ${s.atc.nominal_aar_per_15}, ${s.atc.arrival_runways} rwy; ${s.bank.length} in bank ${b("bank")}</dd>
+    <dt>fuel</dt><dd>${fmt(s.pilot.fuel.on_board_kg??s.pilot.fuel.fuel_on_board_kg??0)} kg, alternate ${esc(s.pilot.fuel.alternate||"")} ${b("pilot.fuel")}</dd>
+    <dt>pax</dt><dd>${s.pilot.pax_total} aboard, ${s.pilot.connections.length} connections ${b("pilot.connections[].pax")}</dd>
+    <dt>ground</dt><dd>gate ${esc(s.ground.original_gate)}, crew duty ends ${hhmm(s.ground.crew_duty_end_min)}, next leg ${esc(s.ground.next_leg?.number?("#"+s.ground.next_leg.number):"")} ${b("ground.next_leg")}</dd>
+    <dt>agents</dt><dd>${esc(d.mode)}${d.model?" · <code>"+esc(d.model)+"</code>":""}</dd>
+  </dl>
+  <details style="margin-top:8px"><summary>what happened historically</summary><div class="kv muted" style="margin-top:4px">
+    <dt>arrival delay</dt><dd>${s.historical.arrival_delay_min} min</dd><dt>next leg dep. delay</dt><dd>${s.historical.next_leg_departure_delay_min} min</dd></div></details>`;
+}
+
+function renderSpace(p){
+  $("#space").hidden=false;
+  $("#space-kv").innerHTML=`<dt>proposals</dt><dd>${p.n_proposals}</dd><dt>legal landings</dt><dd>${p.n_feasible_landing}</dd>
+  <dt>mutually acceptable</dt><dd>${p.n_mutually_acceptable} <span class="muted">(every party ≥ ${p.acceptance_threshold})</span></dd>
+  <dt>utility</dt><dd class="muted" style="font-size:11.5px">${esc(p.utility_rule)}</dd>`;
+}
+
+function renderRules(ev){
+  if(!ev)return;$("#rules").hidden=false;
+  const rows=[];
+  for(const p of PARTIES)for(const v of(ev.verdicts[p]||[]))
+    rows.push(`<div class="rule ${v.ok?"":"bad"}"><span class="m"></span><div><code>${esc(v.rule_id)}</code> <span class="chip ${p}">${p}</span>
+      <span class="muted">measured ${esc(v.measured)} / limit ${esc(v.limit)}</span><div class="d">${esc(v.detail)}</div></div></div>`);
+  $("#rules-list").innerHTML=`<div class="muted" style="margin-bottom:6px">on the table: <code>${esc(key(ev.proposal))}</code> · system cost ${fmt(ev.system_cost)}</div>`+rows.join("");
+}
+
+// ---------------------------------------------------------------- rounds
+function roundEl(r,final,onTable){
+  let el=document.getElementById("round-"+r);
+  if(el)return el;
+  el=document.createElement("div");el.id="round-"+r;el.className="round"+(final?" final":"");
+  el.innerHTML=`<div class="round-head"><h3>Round ${r}${final?" — final vote":""}</h3><span class="on">on the table <code>${esc(onTable)}</code></span></div>
+  <div class="cols">${PARTIES.map(p=>`<div class="agent ${p}" id="a-${r}-${p}"><div class="who"><span>${p}</span><small id="v-${r}-${p}"></small></div><div class="pending">thinking…</div></div>`).join("")}</div>
+  <div class="round-foot" id="foot-${r}"></div>`;
+  $("#rounds").hidden=false;$("#rounds-body").appendChild(el);return el;
+}
+
+function renderMessage(e){
+  const m=e.payload.message,el=document.getElementById(`a-${e.round}-${e.actor}`);if(!el)return;
+  const cls=m.decision==="ACCEPT"?"ok":m.decision==="REJECT"?"bad":"warn";
+  const calls=Object.entries(e.payload.raw||{}).filter(([k])=>k.endsWith("_call")).map(([,c])=>c);
+  const tele=calls.length?`<small class="muted mono">${calls.map(c=>`${(c.latency_s??0).toFixed(1)}s · ${c.usage?.output_tokens??"?"} out`).join(" / ")}</small>`:"";
+  el.innerHTML=`<div class="who"><span>${e.actor}</span><small id="v-${e.round}-${e.actor}">${document.getElementById(`v-${e.round}-${e.actor}`)?.innerHTML||""}</small></div>
+  <div class="msg"><span class="chip ${cls}">${esc(m.decision)}</span>${m.proposal?`<code>${esc(key(m.proposal))}</code>`:""}
+    ${(m.rejected_rule_ids||[]).map(r=>`<code class="muted">${esc(r)}</code>`).join("")}
+    ${m.concessions?.length?`<span class="muted">concedes: ${esc(m.concessions.join(", "))}</span>`:""}</div>
+  <div class="rat">${esc(m.rationale)}</div>${tele}<div class="ruling" id="rul-${e.round}-${e.actor}"><span class="muted">judging…</span></div>`;
+}
+
+function renderAbstain(e){
+  const el=document.getElementById(`a-${e.round}-${e.actor}`);if(!el)return;
+  el.innerHTML=`<div class="who"><span>${e.actor}</span></div><div class="msg"><span class="chip bad">ABSTAIN</span></div>
+  <div class="rat err">${esc(e.payload.reason)}</div><div class="ruling">counted as a non-accept; two abstains hand the decision to the solver</div>`;
+}
+
+const RULING_TEXT={
+  ACCEPT_OK:p=>`accepted; own utility <b>${p.my_utility}</b>`,
+  SELF_VIOLATION:p=>`ACCEPT refused — fails own rules <b>${p.failing_rules.map(v=>v.rule_id).join(", ")}</b>`,
+  REJECT_PREFERENCE:p=>`vote against on preference (utility ${p.my_utility}, ${p.above_threshold?"above":"below"} threshold)`,
+  UNFOUNDED_REJECT:p=>`cited <b>${p.claimed.join(", ")}</b> but the proposal passes them — treated as a plain non-accept`,
+  LATE_COUNTER:()=>`counter in the final vote is ignored — the final round only votes`,
+  INFEASIBLE_COUNTER:p=>`counter discarded — fails <b>${p.failing_rules.map(v=>v.rule_id).join(", ")}</b>`,
+  NON_CONCESSION:p=>`${esc(p.note||"counter is dearer for others and no better for you")}`,
+  COUNTER_OK:p=>`feasible counter; system cost <b>${fmt(p.system_cost)}</b>${p.mutually_acceptable?", mutually acceptable":""}`,
+};
+function renderRuling(e){
+  const el=document.getElementById(`rul-${e.round}-${e.payload.agent}`);if(!el)return;
+  const cls=["ACCEPT_OK","COUNTER_OK"].includes(e.type)?"ok":["SELF_VIOLATION","UNFOUNDED_REJECT","INFEASIBLE_COUNTER"].includes(e.type)?"bad":"warn";
+  el.innerHTML=`<span class="chip ${cls}">${esc(e.type)}</span> ${(RULING_TEXT[e.type]||(()=>""))(e.payload)}`;
+}
+
+function renderRoundEnd(e){
+  const p=e.payload,el=document.getElementById(`foot-${e.round}`);if(!el)return;
+  for(const party of PARTIES){const r=document.getElementById(`rul-${e.round}-${party}`);
+    if(r&&p.outcomes[party]==="REJECT_OK")r.innerHTML=`<span class="chip ok">REJECT_OK</span> rejects on a rule the proposal really fails`;}
+  el.innerHTML=p.consensus?`<span class="chip ok">CONSENSUS</span> all three accepted <code>${esc(state.onTable)}</code>`
+    :`no consensus · next on the table <code>${esc(p.next_on_table)}</code> <span class="muted">— ${esc(p.rule)}</span>`;
+}
+
+function renderView(e){
+  const el=document.getElementById(`v-${e.round}-${e.actor}`);if(!el)return;
+  const p=e.payload;el.innerHTML=`${p.options.length} options · current ${p.current_feasible_for_me?"legal":"<span class='err'>illegal</span>"} for me, u=${Number(p.current_my_utility).toFixed(2)}`;
+}
+
+// ---------------------------------------------------------------- decision
+function bars(util,label){
+  return `<div class="bars">${PARTIES.map(p=>`<span><span class="chip ${p}">${p}</span></span><div class="bar ${p}"><i style="width:${Math.round(100*util[p])}%"></i></div><span class="num">${Number(util[p]).toFixed(2)}</span>`).join("")}</div>`;
+}
+async function renderDecision(o){
+  state.outcome=o;const el=$("#decision");el.hidden=false;
+  const f=o.final,fb=o.fallback_code?`<div class="fb">${esc(o.fallback_code)} — ${esc(o.fallback_reason)}</div>`:"";
+  const src=o.decision_source==="CONSENSUS"?"Consensus":o.decision_source==="UNRESOLVED"?"Unresolved — no legal landing":"Fallback: deterministic solver";
+  const mc=o.model_calls||{};
+  el.innerHTML=`<h2>Decision · requires human approval</h2>
+  <div class="src">${src}</div>${fb}
+  <p style="margin:8px 0"><code>${esc(key(f.proposal))}</code> — slot ${esc(f.proposal.slot_id)} lands ${hhmm(f.derived.arrival_min)} (${f.derived.delay_vs_eta_min>=0?"+":""}${f.derived.delay_vs_eta_min} min vs ETA), ${esc(f.proposal.pilot_action)}, gate ${esc(f.proposal.gate)}, ${esc(f.proposal.crew_plan)}; ${f.derived.missed_pax} pax miss connections, next leg +${f.derived.next_leg_delay_min} min</p>
+  <div class="bars" style="margin-bottom:8px">
+    <span>system cost</span><div class="bar"><i style="width:${Math.min(100,Math.round(100*f.system_cost/Math.max(o.fifo.system_cost,1)))}%"></i></div><span class="num">${fmt(f.system_cost)}</span>
+    <span class="muted">FIFO</span><div class="bar"><i style="width:100%;opacity:.35"></i></div><span class="num muted">${fmt(o.fifo.system_cost)}</span>
+    <span class="muted">optimum</span><div class="bar"><i style="width:${Math.round(100*o.optimum.system_cost/Math.max(o.fifo.system_cost,1))}%;opacity:.35"></i></div><span class="num muted">${fmt(o.optimum.system_cost)}</span></div>
+  <div class="muted" style="margin-bottom:6px">utility of the decision, per party (1 = my cheapest legal option)</div>${bars(o.utilities.final)}
+  <p class="muted" style="margin:10px 0 0;font-size:12.5px">${o.rounds_used} round(s) in ${o.wall_s}s · counters ${o.counters_attempted} (infeasible caught ${o.infeasible_counters_caught}, non-concession ${o.non_concessions}, late ${o.late_counters}) · self-violations ${o.self_violations} · unfounded rejects ${o.unfounded_rejects} · abstains ${o.abstains}
+  ${mc.calls?` · ${mc.calls} model calls, ${fmt(mc.input_tokens)} in / ${fmt(mc.output_tokens)} out, ${mc.cache_read_input_tokens?fmt(mc.cache_read_input_tokens)+" cached":"no cache reads"}`:" · no model calls"}</p>
+  ${o.diversion_assessment?`<p class="fb">Diversion assessment (information, not a decision): alternate ${esc(o.diversion_assessment.alternate)}, ${o.diversion_assessment.divert_feasible?"feasible":"NOT feasible"}, ${o.diversion_assessment.divert_fuel_remaining_kg} kg on arrival</p>`:""}
+  <div class="human" id="human-ui"><button class="primary" id="approve" ${o.decision_source==="UNRESOLVED"?"disabled":""}>Approve</button>
+    <select id="override-sel"><option value="">override to…</option></select><button id="override" disabled>Override</button>
+    <textarea id="note" placeholder="note for the record"></textarea></div><div id="human-out"></div>`;
+  const opts=await (await fetch(`/api/runs/${state.runId}/options`)).json();
+  const sel=$("#override-sel");
+  for(const op of opts){const o2=document.createElement("option");o2.value=op.key;
+    o2.textContent=`${op.key} — cost ${fmt(op.system_cost)}${op.mutually_acceptable?" ✓":""} · u ${PARTIES.map(p=>op.utilities[p].toFixed(2)).join("/")}`;sel.appendChild(o2);}
+  const dv=document.createElement("option");dv.value="DIVERT";dv.textContent="DIVERT — hand off with diversion assessment";sel.appendChild(dv);
+  sel.onchange=()=>{$("#override").disabled=!sel.value;};
+  $("#approve").onclick=()=>decide({action:"approve",note:$("#note").value});
+  $("#override").onclick=()=>decide({action:"override",proposal_key:sel.value,note:$("#note").value});
+  $("#audit-md").href=`/api/runs/${state.runId}/audit.md`;$("#audit-json").href=`/api/runs/${state.runId}/audit.json`;
+  $("#audit-md").hidden=$("#audit-json").hidden=false;
+}
+async function decide(body){
+  const r=await fetch(`/api/runs/${state.runId}/decision`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(!r.ok){const det=d.detail;$("#human-out").innerHTML=`<p class="err">${esc(typeof det==="string"?det:det.error)}${det.failing_rules?": "+det.failing_rules.map(v=>`<code>${esc(v.rule_id)}</code> ${esc(v.detail)}`).join("; "):""}</p>`;return;}
+  renderHuman(d);
+}
+function renderHuman(h){
+  state.human=h;$("#human-ui").hidden=true;
+  $("#human-out").innerHTML=`<p><span class="chip ok">${esc(h.action.toUpperCase())}</span> by ${esc(h.actor)}${h.proposal_key?` → <code>${esc(h.proposal_key)}</code>`:""}${h.delta_vs_negotiated!=null?` <span class="muted">(${h.delta_vs_negotiated>=0?"+":""}${fmt(h.delta_vs_negotiated)} vs negotiated)</span>`:""}
+    <br><span class="muted">ledger seq ${h.seq}, hash <code>${esc(h.hash.slice(0,16))}…</code>${h.note?" — "+esc(h.note):""}</span></p>`;
+}
+
+// ---------------------------------------------------------------- ledger + events
+function renderEntry(e){
+  state.entries.push(e);$("#ledger-card").hidden=false;$("#ledger-n").textContent=`${state.entries.length} entries`;
+  const tr=document.createElement("tr");
+  tr.innerHTML=`<td class="num">${e.seq}</td><td class="num">${e.round}</td><td>${esc(e.actor)}</td><td>${esc(e.type)}</td><td class="mono muted">${e.hash.slice(0,10)}</td>`;
+  const body=$("#ledger-body");body.appendChild(tr);body.parentElement.parentElement.scrollTop=1e9;
+}
+function onEntry(e){
+  renderEntry(e);const p=e.payload;
+  switch(e.type){
+    case "SCENARIO":renderSpace(p);break;
+    case "PROPOSAL":state.current=p.on_table;state.onTable=key(p.on_table.proposal);renderRules(p.on_table);break;
+    case "ROUND_START":state.onTable=p.on_table;roundEl(e.round,p.final_round,p.on_table);break;
+    case "VIEW":renderView(e);break;
+    case "MESSAGE":renderMessage(e);break;
+    case "ABSTAIN":renderAbstain(e);break;
+    case "ROUND_END":renderRoundEnd(e);break;
+    case "HUMAN_DECISION":break;
+    case "DECISION":case "NO_ACCEPTABLE_OPTION":case "NO_FEASIBLE_LANDING":break;
+    default:if(RULING_TEXT[e.type])renderRuling(e);
+  }
+}
+function connect(runId){
+  const es=new EventSource(`/api/runs/${runId}/events`);state.es=es;
+  es.addEventListener("scenario",ev=>renderScenario(JSON.parse(ev.data)));
+  es.addEventListener("ledger",ev=>onEntry(JSON.parse(ev.data)));
+  es.addEventListener("done",ev=>{renderDecision(JSON.parse(ev.data));setStatus("done — awaiting human decision","");es.close();$("#go").disabled=false;});
+  es.addEventListener("error",ev=>{if(ev.data){$("#error").hidden=false;$("#error").textContent=ev.data;setStatus("error","err");}es.close();$("#go").disabled=false;});
+  es.addEventListener("human",ev=>renderHuman(JSON.parse(ev.data)));
+}
+$("#start").addEventListener("submit",async ev=>{
+  ev.preventDefault();reset();const fd=new FormData(ev.target);
+  const body={mode:fd.get("mode"),seed:fd.get("seed")?Number(fd.get("seed")):null,model:fd.get("model")||null};
+  $("#go").disabled=true;setStatus("starting…","live");
+  const r=await fetch("/api/runs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+  if(!r.ok){const d=await r.json();$("#error").hidden=false;$("#error").textContent=JSON.stringify(d.detail);setStatus("error","err");$("#go").disabled=false;return;}
+  const d=await r.json();state.runId=d.run_id;setStatus(`negotiating ${d.scenario_id} (seed ${d.seed})`,"live");connect(d.run_id);
+  history.replaceState(null,"",`?run=${d.run_id}`);
+});
+$("#verify").addEventListener("click",async()=>{
+  const v=await (await fetch(`/api/runs/${state.runId}/verify`)).json();
+  $("#verify-out").innerHTML=v.ok?`<span class="chip ok">VERIFIED</span> ${v.entries} entries`:`<span class="chip bad">BROKEN</span> at seq ${v.first_bad_seq}: ${esc(v.reason)}`;
+});
+
+// ---------------------------------------------------------------- eval tab
+document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".tabs button").forEach(x=>x.setAttribute("aria-selected",x===b));
+  $("#tab-run").hidden=b.dataset.tab!=="run";$("#tab-eval").hidden=b.dataset.tab!=="eval";if(b.dataset.tab==="eval")loadEval();});
+async function loadEval(){
+  const r=await fetch("/api/eval");const t=$("#eval-table");
+  if(!r.ok){t.innerHTML=`<tr><td class="muted">no evaluation yet — run <code>triad eval</code></td></tr>`;return;}
+  const d=await r.json();$("#eval-tag").textContent=d.tag;$("#eval-config-pre").textContent=JSON.stringify(d.config||{},null,1);
+  const cols=[["n","n",v=>v],["consensus_rate","consensus",pct],["consensus_rate_given_acceptable_option","consensus | acceptable exists",pct],
+    ["final_feasible_rate","final legal",pct],["share_at_optimum","at optimum",pct],["gap_vs_optimum_mean","gap vs opt",f0],["saving_vs_fifo_mean","saving vs FIFO",f0],
+    ["min_utility_mean","min utility",f2],["counters_attempted","counters",v=>v],["infeasible_counters_caught","infeasible caught",v=>v],["self_violations","self-viol.",v=>v],
+    ["unfounded_rejects","unfounded rej.",v=>v],["late_counters","late",v=>v],["abstains","abstains",v=>v],["wall_s_mean","s/run",f2],
+    ["model_calls_mean","calls/run",f2],["tokens_mean","tokens in/out",v=>v?`${f0(v.input)}/${f0(v.output)}`:"—"],["usd_mean","$/run",v=>Number(v).toFixed(4)]];
+  const arms=d.arms||{};
+  t.innerHTML=`<thead><tr><th>arm</th>${cols.map(([,l])=>`<th class="num">${l}</th>`).join("")}</tr></thead><tbody>${Object.entries(arms).map(([a,s])=>
+    `<tr><td><b>${esc(a)}</b>${s.model?`<br><small class="muted mono">${esc(s.model)}</small>`:""}</td>${cols.map(([k,,f])=>{const v=s[k];return `<td class="num">${v==null?"—":f(v)}</td>`;}).join("")}</tr>`).join("")}</tbody>`;
+
+}
+
+// ---------------------------------------------------------------- resume a run from the URL
+reset();
+const q=new URLSearchParams(location.search).get("run");
+if(q){state.runId=q;setStatus("replaying "+q,"live");connect(q);}
+</script>
+</body>
+</html>
