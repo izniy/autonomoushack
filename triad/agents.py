@@ -111,6 +111,9 @@ What the judge does with your message:
   - REJECT with rule ids is only valid if the proposal really fails those rules for you
     (your verdicts show ok=false); otherwise it is logged UNFOUNDED_REJECT. REJECT with an
     empty list is a legitimate preference vote.
+  - If a round produces no valid counter, the orchestrator itself tables the cheapest option
+    that clears every party's threshold (MEDIATOR_PROPOSAL). It decides nothing: you judge it
+    like any other proposal.
   - In the final round the only useful answers are ACCEPT or REJECT; a COUNTER is ignored.
   - Unanimous ACCEPT in one round is consensus. Otherwise, after the last round, a deterministic
     solver picks the lowest system-cost legal option and your organisation loses its say.

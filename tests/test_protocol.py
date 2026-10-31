@@ -261,7 +261,10 @@ def test_regressive_counter_is_discarded_and_table_is_monotone(scenario):
     assert out.regressive_counters == 1 and out.rounds[0].outcomes["ATC"] == "REGRESSIVE_COUNTER"
     e = led.of_type("REGRESSIVE_COUNTER")[0]
     assert e.payload["system_cost"] > e.payload["on_table_system_cost"]
-    assert out.rounds[0].next_on_table is None            # the table did not move
+    nxt = out.rounds[0].next_on_table
+    assert nxt != worst.proposal.key()                    # the regressive counter never reached the table
+    if nxt is not None:                                   # any move was the mediator's, never the counter
+        assert led.of_type("ROUND_END")[0].payload["mediated"]
 
 
 @requires_data
@@ -284,6 +287,37 @@ def test_shortlist_carries_the_optimum_and_pareto_options(scenario):
         assert costs == sorted(costs)
     assert j.optimum_seen == {"ATC", "PILOT", "GROUND"}
     assert j.pareto and j.pareto[0].proposal.key() == opt_key   # the optimum is Pareto-efficient
+
+
+@requires_data
+def test_mediator_tables_cheapest_acceptable_option_when_no_counter_is_admissible(scenario):
+    j = Judge(scenario)
+    if not j.acceptable or all(e.proposal.key() == j.fifo.proposal.key() for e in j.acceptable):
+        pytest.skip("no mutually acceptable option beyond FIFO in this scenario")
+    # everyone votes against on preference, nobody counters: the table would never move
+    agents = {p: _Scripted(p, [{"agent": p, "decision": "REJECT", "rejected_rule_ids": [], "rationale": "no"}] * 3)
+              for p in ("ATC", "PILOT", "GROUND")}
+    out, led = run(scenario, agents)
+    med = led.of_type("MEDIATOR_PROPOSAL")
+    assert out.mediator_proposals == len(med) >= 1
+    first = med[0].payload
+    expected = min((e for e in j.acceptable if e.proposal.key() != j.fifo.proposal.key()),
+                   key=lambda e: (e.system_cost, e.proposal.key()))
+    assert first["proposal"] == expected.proposal.model_dump()
+    assert first["system_cost"] <= j.fifo.system_cost
+    assert out.rounds[0].next_on_table == expected.proposal.key()
+    assert out.decision_source == "FALLBACK_SOLVER"          # a tabled option still needs three ACCEPTs
+    tabled = [e.payload["next_on_table"] for e in led.of_type("ROUND_END") if e.payload["mediated"]]
+    assert len(set(tabled)) == len(tabled)                   # never re-tables the same option
+
+
+@requires_data
+def test_mediator_never_fires_when_a_counter_is_admissible_or_in_the_final_round(scenario):
+    _out, led = run(scenario, stub_team("stubborn"))
+    for e in led.of_type("MEDIATOR_PROPOSAL"):
+        rnd_end = next(x for x in led.of_type("ROUND_END") if x.round == e.round)
+        assert e.round < config.MAX_ROUNDS and rnd_end.payload["mediated"]
+        assert not [x for x in led.of_type("COUNTER_OK") if x.round == e.round]
 
 
 @requires_data

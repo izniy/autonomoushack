@@ -707,6 +707,7 @@ function betweenRow(s, rd, nextP) {
     const changed = Object.keys(fmt).filter(k => np[k] !== tp[k]).map(k => `<span class="new" style="--c:${PCOL[w]}">${esc(fmt[k](np[k]))}</span>`).join("");
     return `<div class="between">${PNAME[w]}'s plan wins the round<div class="chips">${changed}</div>${tipHTML("i", "Code picks the cheapest legal counter. The agents don't vote on it.", "info")}</div>`;
   }
+  if (nextP && nextP.payload.source && nextP.payload.source.startsWith("mediator")) return `<div class="between">No legal counter this round. The orchestrator tables the cheapest plan acceptable to all three. The agents still have to accept it.</div>`;
   return `<div class="between">No legal counter this round. The plan stays on the table.</div>`;
 }
 function endRow(o) {

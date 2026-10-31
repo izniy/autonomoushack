@@ -85,6 +85,7 @@ class Outcome(BaseModel):
     unfounded_rejects: int
     late_counters: int
     regressive_counters: int
+    mediator_proposals: int
     abstains: int
     wall_s: float
     agent_meta: dict[str, Any]
@@ -167,7 +168,8 @@ class Judge:
         self.log: list[PriorMessage] = []
         self.rounds: list[RoundRecord] = []
         self.counters = self.infeasible = self.nonconc = self.selfviol = self.unfounded = 0
-        self.late = self.regressive = self.abstains_total = 0
+        self.late = self.regressive = self.mediated = self.abstains_total = 0
+        self.tabled: set[str] = {self.current.proposal.key()} if self.current else set()   # ever on the table
         self.optimum_seen: set[str] = set()      # parties whose shortlist carried the optimum
         self.optimum_proposed = self.optimum_on_table = False
         self.abstain_count: dict[str, int] = {p: 0 for p in PARTIES}
@@ -420,6 +422,16 @@ class Judge:
         lifts = min(self.utilities(ev).values()) > min(self.utilities(cur).values()) + 1e-9
         return not (lifts and ev.system_cost <= self.fifo.system_cost + 1e-6)
 
+    def mediator_proposal(self) -> Evaluation | None:
+        """When a round produces no admissible counter the table would not move and the round
+        is wasted. The orchestrator then tables the cheapest option that clears every party's
+        threshold and has not been on the table yet (single-text mediation). It is a proposal,
+        not a decision: all three agents still have to accept it, or it is judged like any other."""
+        for e in sorted(self.acceptable, key=lambda e: (e.system_cost, e.proposal.key())):
+            if e.proposal.key() not in self.tabled and e.system_cost <= self.fifo.system_cost + 1e-6:
+                return e
+        return None
+
     def pick_winner(self, ok_counters: list[tuple[str, Evaluation]]) -> Evaluation | None:
         """Lowest system cost among feasible, conceding counters; those clearing every party's
         threshold first; tie -> earliest slot."""
@@ -440,15 +452,20 @@ class Judge:
 
         consensus = all(accepted.get(p, False) for p in PARTIES)
         next_eval = None if consensus else self.pick_winner(ok_counters)
+        mediated = False
+        if not consensus and next_eval is None and not self.is_final_round(rnd):
+            next_eval = self.mediator_proposal()
+            mediated = next_eval is not None
         self.rounds.append(RoundRecord(round=rnd, on_table=self.current.proposal.key(), messages=msgs_rec,
                                        outcomes=outcomes,
                                        next_on_table=next_eval.proposal.key() if next_eval else None,
                                        consensus=consensus))
         self.ledger.append("ROUND_END", "ORCHESTRATOR", rnd, {
             "accepted": accepted, "outcomes": outcomes, "consensus": consensus,
-            "next_on_table": (next_eval or self.current).proposal.key(),
+            "next_on_table": (next_eval or self.current).proposal.key(), "mediated": mediated,
             "rule": "lowest system cost among feasible, conceding, non-regressive counters; "
-                    "mutually acceptable first; tie earliest slot"})
+                    "mutually acceptable first; tie earliest slot; no admissible counter -> mediator tables "
+                    "the cheapest mutually acceptable option not yet tabled"})
 
         stop, code, reason = False, None, None
         if consensus:
@@ -468,10 +485,19 @@ class Judge:
                 code, reason, stop = self.code, self.reason, True
             elif next_eval is not None:
                 self.current = next_eval
+                self.tabled.add(next_eval.proposal.key())
                 if self.opt is not None and next_eval.proposal.key() == self.opt.proposal.key():
                     self.optimum_on_table = True
+                if mediated:
+                    self.mediated += 1
+                    self.ledger.append("MEDIATOR_PROPOSAL", "ORCHESTRATOR", rnd, {
+                        "proposal": next_eval.model_dump()["proposal"], "system_cost": next_eval.system_cost,
+                        "utilities": self.utilities(next_eval),
+                        "note": "no admissible counter this round; the orchestrator tables the cheapest option "
+                                "that clears every party's threshold. It decides nothing: all three must accept it"})
                 self.ledger.append("PROPOSAL", "ORCHESTRATOR", rnd, {
-                    "on_table": self.current.model_dump(), "source": "best feasible counter",
+                    "on_table": self.current.model_dump(),
+                    "source": "mediator: cheapest mutually acceptable option" if mediated else "best feasible counter",
                     "utilities": self.utilities(self.current)})
         return RoundJudgement(round=rnd, consensus=consensus, outcomes=outcomes,
                               next_on_table=self.current.proposal.key(), stop=stop,
@@ -511,6 +537,7 @@ class Judge:
             acceptance_threshold=self.threshold, utilities=utilities,
             counters_attempted=self.counters, infeasible_counters_caught=self.infeasible,
             non_concessions=self.nonconc, self_violations=self.selfviol, unfounded_rejects=self.unfounded,
-            late_counters=self.late, regressive_counters=self.regressive, abstains=self.abstains_total,
+            late_counters=self.late, regressive_counters=self.regressive, mediator_proposals=self.mediated,
+            abstains=self.abstains_total,
             wall_s=round(wall_s, 2), agent_meta=agent_meta, gap_cause=cause, diversion_assessment=assess,
         )

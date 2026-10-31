@@ -100,7 +100,8 @@ def row_for(arm: str, seed: int, s: Scenario, o: Outcome, ledger: Ledger) -> dic
         "counters_attempted": o.counters_attempted, "infeasible_counters_caught": o.infeasible_counters_caught,
         "non_concessions": o.non_concessions, "self_violations": o.self_violations,
         "unfounded_rejects": o.unfounded_rejects, "late_counters": o.late_counters,
-        "regressive_counters": o.regressive_counters, "abstains": o.abstains, "gap_cause": o.gap_cause,
+        "regressive_counters": o.regressive_counters, "mediator_proposals": o.mediator_proposals,
+        "abstains": o.abstains, "gap_cause": o.gap_cause,
         "wall_s": round(o.wall_s, 3), **use,
         "ledger_entries": len(ledger.entries), "ledger_head": ledger.head,
         "outcome_hist": dict(hist),
@@ -197,6 +198,8 @@ def summarize_arm(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "regressive_counters": sum(r["regressive_counters"] for r in rows),
             "abstains": sum(r["abstains"] for r in rows),
         },
+        "mediator_proposals": sum(r["mediator_proposals"] for r in rows),
+        "runs_with_mediator_proposal": sum(r["mediator_proposals"] > 0 for r in rows),
         "never_dearer_than_fifo_rate": round(sum(r["saving_vs_fifo"] >= 0 for r in neg) / len(neg), 3) if neg else None,
         "gap_cause": dict(sorted(Counter(r["gap_cause"] for r in cons).items())),
         "gap_vs_optimum_mean": _mean([r["gap_vs_optimum"] for r in neg]),
@@ -265,6 +268,7 @@ def summary_markdown(summary: dict[str, Any]) -> str:
     row("counters attempted / infeasible caught", lambda a: f"{a['counters_attempted']} / {a['infeasible_counters_caught']}")
     row("final decision passes all checkers", lambda a: _f(a["final_feasible_rate"]))
     row("violations", lambda a: json.dumps({k: v for k, v in a["violations"].items() if v}) or "{}")
+    row("mediator proposals / runs with one", lambda a: f"{a['mediator_proposals']} / {a['runs_with_mediator_proposal']}")
     row("final never dearer than FIFO", lambda a: _f(a["never_dearer_than_fifo_rate"]))
     row("gap vs optimum mean / median", lambda a: f"{_f(a['gap_vs_optimum_mean'], '.0f')} / {_f(a['gap_vs_optimum_median'], '.0f')}")
     row("gap vs optimum 95 % CI", lambda a: _ci(a["gap_vs_optimum_ci95"]))

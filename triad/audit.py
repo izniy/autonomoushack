@@ -122,8 +122,10 @@ def audit_markdown(entries: list[Entry], outcome: dict[str, Any] | None = None,
             out.append(f"| {p} | {m['decision']} | `{_key(m.get('proposal'))}` | {outcomes.get(p, ruling.type if ruling else '')} "
                        f"| {detail} — _{rat[:200]}_ |")
         if end:
+            how = ("tabled by the orchestrator as the cheapest mutually acceptable option, no admissible counter"
+                   if end.payload.get("mediated") else f"rule: {end.payload['rule']}")
             out += ["", (f"Round result: consensus **{end.payload['consensus']}**; next on table `{end.payload['next_on_table']}` "
-                        f"(rule: {end.payload['rule']})"), ""]
+                        f"({how})"), ""]
 
     if dec:
         d = dec.payload
