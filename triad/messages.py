@@ -34,7 +34,7 @@ class AgentMessage(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0, default=0.7)
 
     @model_validator(mode="after")
-    def _shape(self) -> "AgentMessage":
+    def _shape(self) -> AgentMessage:
         if self.decision == "COUNTER" and self.proposal is None:
             raise ValueError("COUNTER requires a proposal")
         if self.decision != "COUNTER" and self.proposal is not None:

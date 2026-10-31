@@ -41,6 +41,7 @@ def ask(agent: Agent, view: AgentView) -> Reply:
             out = agent.respond(view, error=err)
             raw[f"attempt_{attempt}"] = out if isinstance(out, (dict, str)) else str(out)
             raw[f"attempt_{attempt}_latency_s"] = round(time.time() - t0, 3)
+            _telemetry(agent, raw, attempt)
             return Reply(parse_message(out, view.party), "", raw)
         except ValueError as e:
             err = f"schema error: {e}"
@@ -49,7 +50,16 @@ def ask(agent: Agent, view: AgentView) -> Reply:
             err = f"agent error: {type(e).__name__}: {e}"
             raw[f"attempt_{attempt}_error"] = err
             raw["traceback"] = traceback.format_exc()[-800:]
+            _telemetry(agent, raw, attempt)
     return Reply(None, err or "no response", raw)
+
+
+def _telemetry(agent: Agent, raw: dict, attempt: int) -> None:
+    """Agents that make model calls expose `last_call` (model, prompt hash, usage, latency,
+    stop reason); it goes into the ledger next to the message it produced."""
+    call = getattr(agent, "last_call", None)
+    if isinstance(call, dict):
+        raw[f"attempt_{attempt}_call"] = dict(call)
 
 
 def run(s: Scenario, agents: dict[Party3, Agent], ledger_path: Path | None = None,

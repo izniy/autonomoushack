@@ -16,7 +16,6 @@ from triad.stubs import StubAgent, stub_team
 
 from .conftest import requires_data
 
-
 # ---------------------------------------------------------------- messages
 
 def test_counter_requires_proposal():

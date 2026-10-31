@@ -20,6 +20,36 @@ RUNS_DIR = ROOT / "runs"
 MODEL = os.getenv("TRIAD_MODEL", "claude-sonnet-5")
 EVAL_MODEL = os.getenv("TRIAD_EVAL_MODEL", "claude-haiku-4-5-20251001")
 
+# Model call limits. A call that times out abstains for that round and the judge carries on.
+MODEL_TIMEOUT_S = float(os.getenv("TRIAD_MODEL_TIMEOUT_S", "60"))
+MODEL_MAX_RETRIES = int(os.getenv("TRIAD_MODEL_MAX_RETRIES", "2"))
+
+# List prices per million tokens (input, output) used to report $/scenario. Override with
+# TRIAD_PRICE_<MODEL>=in,out ; unknown models fall back to the Sonnet rate and are flagged.
+PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
+    "claude-sonnet-5": (3.0, 15.0),
+    "claude-haiku-4-5-20251001": (1.0, 5.0),
+}
+CACHE_READ_DISCOUNT = 0.1      # cache reads bill at 10 % of the input rate
+CACHE_WRITE_PREMIUM = 1.25     # cache writes bill at 125 % of the input rate
+
+
+def price_for(model: str) -> tuple[float, float]:
+    env = os.getenv("TRIAD_PRICE_" + model.upper().replace("-", "_").replace(".", "_"))
+    if env:
+        a, b = env.split(",")
+        return float(a), float(b)
+    return PRICES_PER_MTOK.get(model, PRICES_PER_MTOK["claude-sonnet-5"])
+
+
+def cost_usd(model: str, usage: dict[str, int]) -> float:
+    pin, pout = price_for(model)
+    return (usage.get("input_tokens", 0) * pin
+            + usage.get("cache_read_input_tokens", 0) * pin * CACHE_READ_DISCOUNT
+            + usage.get("cache_creation_input_tokens", 0) * pin * CACHE_WRITE_PREMIUM
+            + usage.get("output_tokens", 0) * pout) / 1e6
+
+
 # Protocol limits are enforced in code, never by prompting.
 MAX_ROUNDS = 3
 SCHEMA_RETRIES = 1

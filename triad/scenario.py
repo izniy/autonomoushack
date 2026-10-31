@@ -368,8 +368,7 @@ def build_scenario(flight: dict) -> Scenario:
     original = rng.choice(gates)
     blk = (eta - 20, eta + rng.choice([15, 25, 40]))
     original.busy = sorted([w for w in original.busy if w[1] <= blk[0] or w[0] >= blk[1]] + [blk])
-    if original.size < ac.size:
-        original.size = ac.size
+    original.size = max(original.size, ac.size)
     prov["ground.gates"] = "synthetic"
 
     nl_row = data.next_leg(flight)

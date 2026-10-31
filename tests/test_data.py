@@ -1,5 +1,5 @@
-from triad import data
 from tests.conftest import requires_data
+from triad import data
 
 
 def test_hhmm_roundtrip():
