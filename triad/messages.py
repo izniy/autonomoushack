@@ -95,7 +95,7 @@ def parse_message(raw: str | dict, party: Party3) -> AgentMessage:
     else:
         data = raw
     if not isinstance(data, dict):
-        raise ValueError("message must be an object")
+        raise ValueError("message must be an object")  # noqa: TRY004  protocol.py treats any bad reply as ValueError
     data = dict(data)
     data.setdefault("agent", party)
     try:

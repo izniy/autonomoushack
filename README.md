@@ -88,7 +88,12 @@ Every state change is one entry in a SHA-256 hash-chained JSONL ledger: scenario
 each party saw, each message with the model id / prompt hash / tokens / latency behind it,
 each ruling with the measured-vs-limit verdicts, each round result with the rule that chose
 the next proposal, the decision, and the human step. `triad verify` and the dashboard
-recompute the chain; `triad audit` rebuilds a Markdown report from the file alone.
+recompute the chain; `triad audit` rebuilds a Markdown report from the file alone. A hash chain
+cannot see lines cut from the end, so each append also rewrites a head anchor beside the ledger
+(`<name>.head`, entry count and head hash) and `verify` checks the file against it. The anchor
+lives next to the ledger, so it catches accidents and naive edits; against a determined editor,
+keep the head hash that `triad negotiate` and the API report somewhere else. Appends are
+serialised with a lock, so the worker thread and a human decision can never interleave.
 
 ## Setup
 
@@ -115,11 +120,11 @@ Then build the parquet cache once: `.venv/bin/python scripts/build_parquet.py`.
 triad scenario --seed 29                 # one disruption, with provenance labels
 triad solve --seed 29                    # decision space, FIFO and optimum
 triad negotiate --seed 29 --stub yielding   # full protocol with scripted agents, no API
-triad negotiate --seed 29                # live model agents (TRIAD_MODEL, default Sonnet)
+triad negotiate --seed 29                # live model agents (TRIAD_MODEL, default claude-sonnet-5-5)
 triad verify runs/EV4636-2015-01-07.ledger.jsonl
 triad audit  runs/EV4636-2015-01-07.ledger.jsonl > audit.md
 triad eval --arms greedy yielding agreeable stubborn          # 30 seeds, 4 stub arms
-triad eval --arms yielding llm:claude-haiku-4-5-20251001 -n 20
+triad eval --arms yielding llm:claude-sonnet-5-5 -n 20
 triad serve                              # dashboard at http://127.0.0.1:8000
 pytest
 ```
@@ -128,7 +133,9 @@ Demo seeds are `29, 7, 101`; evaluation seeds start at 1000 and never overlap th
 
 Stub policies: `greedy` (counters with its cheapest option until the table is within
 tolerance), `yielding` (concedes progressively), `agreeable` (accepts anything legal),
-`stubborn` (never accepts), `reckless` (counters with infeasible proposals), `flaky`
+`stubborn` (never accepts), `reckless` (accepts anything, even what fails its own rules; the
+judge refuses that as `SELF_VIOLATION`, which only shows when the proposal on the table is
+illegal for that party, so the unit tests drive it directly), `flaky`
 (fails the schema once), `broken` (never produces a valid message), `crashing` (raises, like a
 provider timeout). They exist to exercise every path of the judge without a model, and to give
 the model arms something to be compared against.
@@ -142,7 +149,9 @@ each message. When the run ends the duty manager sees the decision, its source a
 code, system cost against FIFO and optimum, each party's utility, and can **Approve** or
 **Override** to any *legal* option (an override that fails a hard rule is refused with the
 failing rules) or hand off with the diversion assessment. The human step is appended to the
-same chain as `HUMAN_DECISION`, actor `USER`. `/api/runs/{id}/audit.md|.json|verify`
+same chain as `HUMAN_DECISION`, actor `USER`. Only one human decision is accepted per run, even
+under simultaneous clicks. The API has no authentication, so `actor` is whatever the client sent;
+the entry records `actor_authenticated: false` and should be read that way. `/api/runs/{id}/audit.md|.json|verify`
 download the trail; `/api/eval` shows the latest batch summary on the Evaluation tab.
 
 ## Evaluation
@@ -217,7 +226,7 @@ triad/
   api.py        FastAPI service: runs, SSE stream, options, human decision, audit
   static/       dashboard
   cli.py        triad scenario | solve | negotiate | verify | audit | eval | serve
-tests/          120 tests: checkers, solver, ledger tamper, judge paths, agents with a fake
+tests/          124 tests: checkers, solver, ledger tamper, judge paths, agents with a fake
                 client, eval harness, audit and API end to end
 ```
 

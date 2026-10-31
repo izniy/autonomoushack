@@ -9,7 +9,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from .ledger import Entry, verify_entries
+from .ledger import Entry, VerifyResult, verify_entries
 from .messages import PARTIES
 
 RULING_TYPES = ("ACCEPT_OK", "SELF_VIOLATION", "REJECT_PREFERENCE", "UNFOUNDED_REJECT",
@@ -66,14 +66,17 @@ def model_calls(entries: list[Entry]) -> dict[str, Any]:
 
 
 def audit_markdown(entries: list[Entry], outcome: dict[str, Any] | None = None,
-                   human: dict[str, Any] | None = None) -> str:
-    ver = verify_entries([e.model_dump() for e in entries])
+                   human: dict[str, Any] | None = None, verification: VerifyResult | None = None) -> str:
+    """`verification` lets a caller that read the entries from a file pass the file-level
+    result, which also checks the head anchor; otherwise only the chain is recomputed."""
+    ver = verification or verify_entries([e.model_dump() for e in entries])
     sc = next((e for e in entries if e.type == "SCENARIO"), None)
     dec = next((e for e in entries if e.type == "DECISION"), None)
     s = sc.payload["scenario"] if sc else {}
     f = s.get("flight", {})
     out = [f"# Negotiation audit — {entries[0].scenario_id if entries else '?'}", ""]
-    out.append(f"Ledger: {len(entries)} entries, chain {'VERIFIED' if ver.ok else 'BROKEN at seq ' + str(ver.first_bad_seq)}, "
+    status = "VERIFIED" if ver.ok else f"BROKEN at seq {ver.first_bad_seq} ({ver.reason})"
+    out.append(f"Ledger: {len(entries)} entries, chain {status}, "
                f"head `{entries[-1].hash[:16]}…`" if entries else "Ledger: empty")
     out.append("")
     if sc:

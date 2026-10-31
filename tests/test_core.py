@@ -2,7 +2,7 @@
 
 import pytest
 
-from triad import checkers, costs, rules
+from triad import checkers, config, costs, rules
 from triad.proposal import REMOTE_STAND, Proposal, actions_for_delay, derive, enumerate_proposals
 from triad.scenario import random_scenario
 from triad.solver import evaluate, evaluate_all, feasible_set, fifo_baseline, optimum, summarize
@@ -15,6 +15,13 @@ SEEDS = [0, 1, 5, 6, 12, 25]
 @pytest.fixture(scope="module", params=SEEDS)
 def scenario(request):
     return random_scenario(seed=request.param)
+
+
+def test_data_dir_resolves_against_repo_root(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)          # a relative path must not depend on where triad is run
+    assert config.resolve_data_dir("data") == config.ROOT / "data"
+    assert config.resolve_data_dir(None) == config.ROOT / "data"
+    assert config.resolve_data_dir(str(tmp_path)) == tmp_path
 
 
 def test_actions_for_delay():

@@ -104,16 +104,18 @@ def main(argv: list[str] | None = None) -> None:
 
         r = verify_file(Path(args.path))
         print(("OK" if r.ok else "TAMPERED") + f": {r.entries} entries"
-              + (f", first bad seq {r.first_bad_seq}: {r.reason}" if not r.ok else ""))
+              + (f", head {r.head[:12]}" if r.ok else f", first bad seq {r.first_bad_seq}: {r.reason}")
+              + ("" if r.anchored else " (no head anchor found, so truncation cannot be checked)"))
         raise SystemExit(0 if r.ok else 1)
     elif args.cmd == "audit":
         from pathlib import Path
 
         from .audit import audit_markdown
-        from .ledger import Entry
+        from .ledger import Entry, verify_file
 
         lines = [ln for ln in Path(args.path).read_text().splitlines() if ln.strip()]
-        print(audit_markdown([Entry.model_validate(json.loads(ln)) for ln in lines]))
+        print(audit_markdown([Entry.model_validate(json.loads(ln)) for ln in lines],
+                             verification=verify_file(Path(args.path))))
     elif args.cmd == "serve":
         import uvicorn
 

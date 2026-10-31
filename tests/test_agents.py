@@ -59,6 +59,8 @@ class FakeClient:
 
 @pytest.fixture
 def scenario():
+    if not config.FLIGHTS_PARQUET.exists():
+        pytest.skip("flights.parquet not built")
     return random_scenario(seed=29)
 
 
@@ -84,7 +86,8 @@ def test_request_shape_and_telemetry(scenario):
     j = Judge(scenario)
     out = a.respond(j.view("ATC", 1))
     req = client.requests[0]
-    assert req["model"] == "test-model" and req["temperature"] == 0.0
+    assert req["model"] == "test-model"
+    assert "temperature" not in req and "top_p" not in req and "top_k" not in req   # rejected by the SDK
     assert req["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert req["output_config"]["format"]["schema"] is DRAFT_SCHEMA
     assert out["decision"] in ("ACCEPT", "COUNTER")
@@ -126,4 +129,6 @@ def test_full_protocol_with_model_replies(scenario, tmp_path):
 
 def test_cost_table():
     assert config.cost_usd("claude-haiku-4-5-20251001", {"input_tokens": 1_000_000, "output_tokens": 0}) == 1.0
-    assert config.price_for("unknown-model") == config.PRICES_PER_MTOK["claude-sonnet-5"]
+    assert config.price_for("unknown-model") == config.PRICES_PER_MTOK["claude-sonnet-5-5"]
+    assert config.price_for("claude-opus-5-5") == (4.0, 20.0)
+    assert config.price_for("claude-sonnet-5-5") == (2.0, 10.0)

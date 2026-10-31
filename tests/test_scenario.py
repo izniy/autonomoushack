@@ -1,3 +1,5 @@
+from itertools import pairwise
+
 from tests.conftest import requires_data
 from triad.scenario import random_scenario
 
@@ -10,7 +12,7 @@ def test_scenario_is_reproducible_and_consistent():
 
     # slots are 5 minutes apart starting no later than the earliest achievable arrival
     starts = [s.start_min for s in a.atc.slots]
-    assert all(y - x == 5 for x, y in zip(starts, starts[1:]))
+    assert all(y - x == 5 for x, y in pairwise(starts))
     assert starts[0] <= a.pilot.earliest_arr_min < starts[0] + 5
 
     # gate windows never overlap on the same gate

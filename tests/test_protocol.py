@@ -1,12 +1,13 @@
 """Protocol, messages and ledger. Uses stub agents; no model, no network."""
 
 import json
+import threading
 
 import pytest
 
 from triad import config
 from triad.judge import Judge, Reply
-from triad.ledger import Ledger, verify_entries, verify_file
+from triad.ledger import Ledger, head_path, verify_entries, verify_file
 from triad.messages import parse_message
 from triad.proposal import Proposal
 from triad.protocol import run
@@ -78,6 +79,49 @@ def test_ledger_chain_verifies_and_detects_tampering(tmp_path):
     assert not r.ok and r.first_bad_seq == 2
 
 
+def test_ledger_head_anchor_detects_truncation(tmp_path):
+    path = tmp_path / "l.jsonl"
+    led = Ledger("X", path)
+    for i in range(4):
+        led.append("T", "ORCHESTRATOR", i, {"i": i})
+    r = verify_file(path)
+    assert r.ok and r.anchored and r.entries == 4 and r.head == led.head
+
+    # the chain of the first three lines is internally valid, so only the anchor catches this
+    lines = path.read_text().splitlines()
+    path.write_text("\n".join(lines[:-1]) + "\n")
+    assert verify_entries([json.loads(ln) for ln in lines[:-1]]).ok
+    r = verify_file(path)
+    assert not r.ok and r.anchored and "truncated" in r.reason
+
+    # without an anchor the file still verifies, and says it could not check the ending
+    head_path(path).unlink()
+    r = verify_file(path)
+    assert r.ok and not r.anchored
+
+
+def test_ledger_concurrent_appends_stay_in_order(tmp_path):
+    path = tmp_path / "l.jsonl"
+    led = Ledger("X", path)
+    n_threads, per_thread = 16, 25
+    barrier = threading.Barrier(n_threads)
+
+    def worker(t):
+        barrier.wait()
+        for i in range(per_thread):
+            led.append("T", f"W{t}", 0, {"t": t, "i": i})
+
+    threads = [threading.Thread(target=worker, args=(t,)) for t in range(n_threads)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert len(led.entries) == n_threads * per_thread
+    assert [e.seq for e in led.entries] == list(range(n_threads * per_thread))
+    r = verify_file(path)
+    assert r.ok and r.anchored and r.entries == n_threads * per_thread
+
+
 # ---------------------------------------------------------------- protocol
 
 @pytest.fixture(scope="module")
@@ -132,7 +176,7 @@ def test_flaky_agent_is_rescued_by_the_retry(scenario):
 
 @requires_data
 def test_infeasible_counters_never_reach_the_table(scenario):
-    out, led = run(scenario, stub_team("greedy"))
+    _out, led = run(scenario, stub_team("greedy"))
     feasible_keys = {e.proposal.key() for e in evaluate_all(scenario) if e.feasible}
     for e in led.of_type("PROPOSAL"):
         assert Proposal.model_validate(e.payload["on_table"]["proposal"]).key() in feasible_keys
@@ -200,7 +244,7 @@ def test_unfounded_reject_is_logged(scenario):
         "PILOT": StubAgent("PILOT", "agreeable"),
         "GROUND": StubAgent("GROUND", "agreeable"),
     }
-    out, led = run(scenario, agents, max_rounds=1)
+    out, _led = run(scenario, agents, max_rounds=1)
     assert out.unfounded_rejects == 1
     assert out.decision_source == "FALLBACK_SOLVER"
 
@@ -289,14 +333,14 @@ def test_divert_counter_is_refused_as_public_rule(scenario):
 
 
 @requires_data
-def test_round_winner_prefers_mutually_acceptable_counters(scenario):
-    j = Judge(scenario, max_rounds=3)
-    if not j.acceptable:
-        pytest.skip("scenario has no mutually acceptable option")
+def test_round_winner_prefers_mutually_acceptable_counters():
+    # Seed 2 has a feasible counter that is cheaper for the system but fails someone's threshold,
+    # which is exactly the case the rule exists for (the demo seed 29 has none, so it never ran).
+    j = Judge(random_scenario(seed=2), max_rounds=3)
+    assert j.acceptable
     acc = max(j.acceptable, key=lambda e: e.system_cost)                   # dearest acceptable
     cheaper = [e for e in j.feasible if not j.is_acceptable(e) and e.system_cost < acc.system_cost]
-    if not cheaper:
-        pytest.skip("no cheaper unacceptable counter to compare against")
+    assert cheaper, "seed 2 no longer has a cheaper unacceptable counter; pick another seed"
     assert j.pick_winner([("ATC", cheaper[0]), ("PILOT", acc)]).proposal.key() == acc.proposal.key()
 
 
@@ -313,6 +357,7 @@ def test_agent_errors_get_their_own_reason_code(scenario):
     assert "traceback" in led.of_type("ABSTAIN")[0].payload["raw"]
 
 
+@requires_data
 def test_no_feasible_landing_is_unresolved_not_a_diversion_order():
     from triad.scenario import random_scenario
 

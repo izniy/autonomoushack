@@ -180,10 +180,9 @@ class LlmAgent:
     calls for the same party are sequential by construction of the protocol."""
 
     def __init__(self, party: Party3, model: str | None = None, client: Any = None,
-                 temperature: float = 0.0, max_tokens: int = 1024, timeout_s: float | None = None):
+                 max_tokens: int = 1024, timeout_s: float | None = None):
         self.party = party
         self.model = model or config.MODEL
-        self.temperature = temperature
         self.max_tokens = max_tokens
         self._client = client
         self.timeout_s = timeout_s or config.MODEL_TIMEOUT_S
@@ -202,7 +201,7 @@ class LlmAgent:
         return self._client
 
     def meta(self) -> dict[str, Any]:
-        return {"kind": "llm", "model": self.model, "temperature": self.temperature,
+        return {"kind": "llm", "model": self.model,
                 "output_mode": self.output_mode, "prompt_version": PROMPT_VERSION,
                 "calls": self.calls, "usage": dict(self.usage), "latency_s": round(self.latency_s, 3),
                 "usd": round(config.cost_usd(self.model, self.usage), 4)}
@@ -217,9 +216,11 @@ class LlmAgent:
         return [{"role": "user", "content": user}]
 
     def _request(self, view: AgentView, error: str | None) -> dict[str, Any]:
+        # No sampling parameters: current Claude models and SDKs do not accept `temperature`, and
+        # the judge, not sampling, is what makes outcomes reproducible.
         system = system_prompt(self.party)
         req: dict[str, Any] = {
-            "model": self.model, "max_tokens": self.max_tokens, "temperature": self.temperature,
+            "model": self.model, "max_tokens": self.max_tokens,
             "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             "messages": self._messages(view, error),
         }

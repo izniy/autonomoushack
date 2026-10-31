@@ -262,7 +262,7 @@ def build_scenario(flight: dict) -> Scenario:
     capacity_factor = round(rng.uniform(0.5, 0.75), 2) if weather else round(rng.uniform(0.8, 1.0), 2)
     aar_hist = data.nominal_arrival_rate(fl.dest, sched_arr // 60)
     nominal = max(2, int(aar_hist["p95_per_15min"]))
-    effective = nominal_effective = max(1, int(round(nominal * capacity_factor)))
+    effective = nominal_effective = max(1, round(nominal * capacity_factor))
     prov["disruption.trigger"] = "real"
     prov["disruption.capacity_factor"] = "synthetic"
     prov["atc.nominal_aar_per_15"] = "derived"
@@ -433,10 +433,10 @@ def describe(s: Scenario) -> str:
         f"  sched arr {f.sched_arr}, departed {f.departure_delay_min:+d} min, ETA {s.t(s.pilot.eta_min)}, decision at {s.t(s.now_min)}",
         f"  trigger {s.disruption.trigger}: weather {f.weather_delay_min} / late-aircraft {f.late_aircraft_delay_min} min",
         f"  note: {s.disruption.note}",
-        f"  ATC: AAR {s.atc.nominal_aar_per_15}->{s.atc.effective_aar_per_15} per 15 min; bank {len(s.bank)} flights;"
-        f" demand/bin {dict((s.t(k), v) for k, v in s.atc.demand_per_bin.items())}; max hold {s.atc.max_hold_min}",
-        f"  Pilot: FOB {s.pilot.fuel.fuel_on_board_kg:.0f} kg, alt {s.pilot.fuel.alternate} {s.pilot.fuel.alternate_nm} nm,"
-        f" pax {s.pilot.pax_total}, connections {[(c.number, c.dest, s.t(c.sched_dep_min), c.pax) for c in s.pilot.connections]}",
+        (f"  ATC: AAR {s.atc.nominal_aar_per_15}->{s.atc.effective_aar_per_15} per 15 min; bank {len(s.bank)} flights;"
+         f" demand/bin { {s.t(k): v for k, v in s.atc.demand_per_bin.items()} }; max hold {s.atc.max_hold_min}"),
+        (f"  Pilot: FOB {s.pilot.fuel.fuel_on_board_kg:.0f} kg, alt {s.pilot.fuel.alternate} {s.pilot.fuel.alternate_nm} nm,"
+         f" pax {s.pilot.pax_total}, connections {[(c.number, c.dest, s.t(c.sched_dep_min), c.pax) for c in s.pilot.connections]}"),
         f"  Ground: gates {[(g.id, g.size, [(s.t(a), s.t(b)) for a, b in g.busy]) for g in s.ground.gates]}",
         f"          original gate {s.ground.original_gate}; next leg "
         + (f"{s.ground.next_leg.number}->{s.ground.next_leg.dest} at {s.t(s.ground.next_leg.sched_dep_min)}, crew duty ends {s.t(s.ground.crew_duty_end_min)}"

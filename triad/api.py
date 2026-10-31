@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from . import config
 from .audit import audit_markdown, model_calls
 from .judge import Judge, Outcome
-from .ledger import Entry, verify_entries
+from .ledger import Entry, VerifyResult, verify_entries, verify_file
 from .messages import PARTIES
 from .protocol import drive
 from .scenario import describe, random_scenario
@@ -55,6 +55,9 @@ class Run:
     error: str | None = None
     human: dict[str, Any] | None = None
     lock: threading.Lock = field(default_factory=threading.Lock)
+    # Serialises the human step: the check for an existing decision and the write must be one
+    # step, or simultaneous clicks each pass the check and each append a HUMAN_DECISION.
+    decision_lock: threading.Lock = field(default_factory=threading.Lock)
 
     def push(self, kind: str, data: Any) -> None:
         """Thread-safe: called from the worker thread (ledger entries) and the event loop."""
@@ -235,7 +238,9 @@ def options(run_id: str) -> list[dict[str, Any]]:
 def record_human_decision(j: Judge, o: Outcome, req: DecisionRequest) -> dict[str, Any]:
     """Validate and append a HUMAN_DECISION entry. Pure function of judge state, so the CLI
     and tests can use it without the HTTP layer."""
-    payload: dict[str, Any] = {"action": req.action, "note": req.note, "actor": req.actor, "ts": time.time(),
+    # `actor` is whatever the client sent: the API has no authentication, and the ledger says so.
+    payload: dict[str, Any] = {"action": req.action, "note": req.note, "actor": req.actor,
+                               "actor_authenticated": False, "ts": time.time(),
                                "decision_source": o.decision_source, "negotiated": o.final.proposal.key()}
     if req.action == "approve":
         if o.decision_source == "UNRESOLVED":
@@ -267,11 +272,21 @@ def human_decision(run_id: str, req: DecisionRequest) -> dict[str, Any]:
     run = _run(run_id)
     if run.outcome is None:
         raise HTTPException(409, run.error or "negotiation has not finished")
-    if run.human:
-        raise HTTPException(409, "a human decision was already recorded")
-    run.human = record_human_decision(run.judge, run.outcome, req)
+    with run.decision_lock:
+        if run.human:
+            raise HTTPException(409, "a human decision was already recorded")
+        run.human = record_human_decision(run.judge, run.outcome, req)
     run.push("human", run.human)
     return run.human
+
+
+def _verify_run(run: Run) -> VerifyResult:
+    """Verify what was persisted (the file and its head anchor) when there is a file, so the
+    dashboard checks the same trail `triad verify` would; otherwise the in-memory chain."""
+    path = run.judge.ledger.path
+    if path is not None and path.exists():
+        return verify_file(path)
+    return verify_entries(run.judge.ledger.dump())
 
 
 @app.get("/api/runs/{run_id}/audit.json")
@@ -279,19 +294,19 @@ def audit_json(run_id: str) -> dict[str, Any]:
     run = _run(run_id)
     return {"run_id": run.id, "scenario_id": run.scenario_id, "mode": run.mode, "model": run.model,
             "outcome": run.outcome_dict(), "human": run.human, "ledger": run.judge.ledger.dump(),
-            "ledger_head": run.judge.ledger.head, "verify": verify_entries(run.judge.ledger.dump()).model_dump()}
+            "ledger_head": run.judge.ledger.head, "verify": _verify_run(run).model_dump()}
 
 
 @app.get("/api/runs/{run_id}/audit.md")
 def audit_md(run_id: str) -> PlainTextResponse:
     run = _run(run_id)
-    md = audit_markdown(run.judge.ledger.entries, run.outcome_dict(), run.human)
+    md = audit_markdown(run.judge.ledger.entries, run.outcome_dict(), run.human, verification=_verify_run(run))
     return PlainTextResponse(md, media_type="text/markdown")
 
 
 @app.get("/api/runs/{run_id}/verify")
 def verify(run_id: str) -> dict[str, Any]:
-    return verify_entries(_run(run_id).judge.ledger.dump()).model_dump()
+    return _verify_run(_run(run_id)).model_dump()
 
 
 @app.get("/api/eval")

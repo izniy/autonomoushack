@@ -6,9 +6,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import duckdb  # noqa: E402
+import duckdb
 
-from triad.config import FLIGHTS_CSV, FLIGHTS_PARQUET  # noqa: E402
+from triad.config import FLIGHTS_CSV, FLIGHTS_PARQUET
 
 
 def main() -> None:

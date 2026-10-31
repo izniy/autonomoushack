@@ -56,10 +56,9 @@ class StubAgent:
         if self.policy == "reckless":
             return {**base, "decision": "ACCEPT", "rationale": "fine by me"}
 
-        if not cur.feasible_for_me:
-            if self.policy in ("agreeable",) or best is None:
-                return {**base, "decision": "REJECT", "rejected_rule_ids": fails,
-                        "rationale": f"fails my rules {', '.join(fails)}"}
+        if not cur.feasible_for_me and (self.policy == "agreeable" or best is None):
+            return {**base, "decision": "REJECT", "rejected_rule_ids": fails,
+                    "rationale": f"fails my rules {', '.join(fails)}"}
         if self.policy == "agreeable":
             return {**base, "decision": "ACCEPT", "rationale": "passes my rules"}
 

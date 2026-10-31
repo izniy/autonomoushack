@@ -4,6 +4,7 @@ start, stream, options, human approve/override (legal only), audit, verify."""
 from __future__ import annotations
 
 import json
+import threading
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,6 +15,10 @@ from triad.ledger import Entry, verify_entries
 from triad.protocol import run
 from triad.scenario import random_scenario
 from triad.stubs import stub_team
+
+from .conftest import requires_data
+
+pytestmark = requires_data   # every test here builds a scenario from the dataset
 
 
 @pytest.fixture
@@ -35,7 +40,7 @@ def _wait(client, run_id):
 
 def test_audit_markdown_from_ledger_file(tmp_path):
     s = random_scenario(seed=29)
-    o, ledger = run(s, stub_team("yielding"), ledger_path=tmp_path / "l.jsonl")
+    o, _ledger = run(s, stub_team("yielding"), ledger_path=tmp_path / "l.jsonl")
     entries = [Entry.model_validate(json.loads(ln)) for ln in (tmp_path / "l.jsonl").read_text().splitlines()]
     md = audit_markdown(entries)
     assert "chain VERIFIED" in md and "## Round 1" in md and "## Decision" in md
@@ -83,6 +88,34 @@ def test_api_run_stream_and_approve(client):
     md = client.get(f"/api/runs/{run_id}/audit.md").text
     assert "## Human decision" in md and "approve by USER" in md
     assert client.get("/api/runs").json()[0]["run_id"] == run_id
+
+
+def test_api_records_one_human_decision_under_concurrent_clicks(client):
+    run_id = client.post("/api/runs", json={"seed": 7, "mode": "agreeable"}).json()["run_id"]
+    _wait(client, run_id)
+    n = 16
+    barrier = threading.Barrier(n)
+    results: list[str] = []
+
+    def click(i):
+        barrier.wait()
+        try:
+            api.human_decision(run_id, api.DecisionRequest(action="approve", actor=f"U{i}"))
+            results.append("ok")
+        except api.HTTPException as e:
+            results.append(str(e.status_code))
+
+    threads = [threading.Thread(target=click, args=(i,)) for i in range(n)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert results.count("ok") == 1 and results.count("409") == n - 1
+    ledger = api.RUNS[run_id].judge.ledger
+    assert len(ledger.of_type("HUMAN_DECISION")) == 1
+    assert ledger.of_type("HUMAN_DECISION")[0].payload["actor_authenticated"] is False
+    v = client.get(f"/api/runs/{run_id}/verify").json()
+    assert v["ok"] and v["anchored"]          # the dashboard checks the file on disk, anchor included
 
 
 def test_api_override_must_be_legal(client):

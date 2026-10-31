@@ -9,6 +9,8 @@ import pytest
 from triad import config
 from triad.eval import eval_seeds, parse_arm, run_eval, summary_markdown
 
+from .conftest import requires_data
+
 
 def test_eval_seeds_are_disjoint_from_demo_seeds():
     seeds = eval_seeds(config.EVAL_SEEDS_DEFAULT)
@@ -26,6 +28,7 @@ def test_parse_arm():
         parse_arm("nonsense")
 
 
+@requires_data
 def test_stub_eval_writes_rows_and_summary(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RUNS_DIR", tmp_path)
     rows, summary, out_dir = run_eval(["agreeable", "stubborn"], seeds=[1000, 1001], tag="t")

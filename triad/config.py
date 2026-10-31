@@ -10,23 +10,37 @@ from dotenv import load_dotenv
 load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_DIR = Path(os.getenv("TRIAD_DATA_DIR", ROOT / "data"))
+
+
+def resolve_data_dir(raw: str | None) -> Path:
+    """A relative TRIAD_DATA_DIR is read against the repo root, not the shell's working
+    directory, so `triad` works from any folder."""
+    d = Path(raw or "data").expanduser()
+    return d if d.is_absolute() else ROOT / d
+
+
+DATA_DIR = resolve_data_dir(os.getenv("TRIAD_DATA_DIR"))
 FLIGHTS_CSV = DATA_DIR / "flights.csv"
 FLIGHTS_PARQUET = DATA_DIR / "flights.parquet"
 AIRPORTS_CSV = DATA_DIR / "airports.csv"
 AIRLINES_CSV = DATA_DIR / "airlines.csv"
 RUNS_DIR = ROOT / "runs"
 
-MODEL = os.getenv("TRIAD_MODEL") or os.getenv("AGENT_MODEL") or "claude-sonnet-5"
-EVAL_MODEL = os.getenv("TRIAD_EVAL_MODEL", "claude-haiku-4-5-20251001")
+MODEL = os.getenv("TRIAD_MODEL") or os.getenv("AGENT_MODEL") or "claude-sonnet-5-5"
+EVAL_MODEL = os.getenv("TRIAD_EVAL_MODEL") or "claude-haiku-5-5"
 
 # Model call limits. A call that times out abstains for that round and the judge carries on.
 MODEL_TIMEOUT_S = float(os.getenv("TRIAD_MODEL_TIMEOUT_S", "30"))
 MODEL_MAX_RETRIES = int(os.getenv("TRIAD_MODEL_MAX_RETRIES", "0"))  # SDK-level; a failure abstains
 
 # List prices per million tokens (input, output) used to report $/scenario. Override with
-# TRIAD_PRICE_<MODEL>=in,out ; unknown models fall back to the Sonnet rate and are flagged.
+# TRIAD_PRICE_<MODEL>=in,out ; unknown models fall back to the Sonnet 5.5 rate.
+# Base list prices from platform.claude.com/docs/en/models/overview (checked 2026-10-31).
 PRICES_PER_MTOK: dict[str, tuple[float, float]] = {
+    "claude-fable-5-1": (10.0, 50.0),
+    "claude-opus-5-5": (4.0, 20.0),
+    "claude-sonnet-5-5": (2.0, 10.0),
+    "claude-haiku-5-5": (0.10, 0.50),     # listed as "from"; the lowest tier
     "claude-sonnet-5": (3.0, 15.0),
     "claude-haiku-4-5-20251001": (1.0, 5.0),
 }
@@ -39,7 +53,7 @@ def price_for(model: str) -> tuple[float, float]:
     if env:
         a, b = env.split(",")
         return float(a), float(b)
-    return PRICES_PER_MTOK.get(model, PRICES_PER_MTOK["claude-sonnet-5"])
+    return PRICES_PER_MTOK.get(model, PRICES_PER_MTOK["claude-sonnet-5-5"])
 
 
 def cost_usd(model: str, usage: dict[str, int]) -> float:
