@@ -7,16 +7,12 @@
 
 **Design principle: agents reason, concede and explain; code decides what is legal, what it costs, and who wins a round.**
 
-> **Status (31 Oct 2026):** every phase below is built; see [README.md](README.md) for the architecture as
-> implemented, the CLI, the dashboard and the evaluation numbers. Deviations from the plan are marked
-> *as built* inline. Live-model arms require `ANTHROPIC_API_KEY`; without it the agents abstain and the
-> solver decides with `fallback_code = AGENT_ERROR`, which is recorded, not hidden.
+> This document is the design record. [README.md](README.md) describes the architecture as implemented,
+> the CLI, the dashboard and the evaluation numbers; where the build departed from the plan the
+> section is marked *as built*.
 
-## 0. Rubric mapping
-
-| Criterion (weight) | How TRIAD scores it |
-|---|---|
-| Problem realism 20% | User: **airline OCC duty manager at a hub**, counterparties tower/approach supervisor and apron/stand controller. Status quo: phone calls, ACARS, hand-typed target times in an A-CDM portal; each party optimises locally. Cost: holding burns ~2,000+ kg/h narrowbody; all-in delay cost ~US$75–100/aircraft-min (A4A — verify & cite); missed connections and late-aircraft propagation (`LATE_AIRCRAFT_DELAY` on the next leg is *in the data*). TRIAD = the negotiation layer A-CDM doesn't have. |
+---|---|
+| Problem realism 20% | User: **airline OCC duty manager at a hub**, counterparties tower/approach supervisor and apron/stand controller. Status quo: phone calls, ACARS, hand-typed target times in an A-CDM portal; each party optimises locally. Cost: holding burns ~2,000+ kg/h narrowbody; all-in delay cost ~US$75–100/aircraft-min (A4A cost-of-delay estimate); missed connections and late-aircraft propagation (`LATE_AIRCRAFT_DELAY` on the next leg is *in the data*). TRIAD = the negotiation layer A-CDM doesn't have. |
 | Technical soundness 25% | LLMs only interpret, counter, concede, explain. Feasibility, cost, round winner, turn cap and fallback are code. Tested on 50–100 sampled scenarios with stub agents, Haiku and Sonnet. |
 | Honest evaluation 20% | Arms: FIFO status quo · solver optimum · LLM negotiation. Report consensus rate, fallback rate by cause, *attempted* infeasible counters (and % caught — must be 100%), optimality gap vs solver, Δ cost vs FIFO, latency, $/scenario. Synthetic fields labelled everywhere. Failure cases shipped on purpose. |
 | Trust & traceability 20% | Rule registry with IDs + sources (14 CFR 91.167 fuel reserve; FAA JO 7110.65 wake minima; 14 CFR 117 FDP limits; SOP turnaround). Hash-chained JSONL ledger: every message, every `{rule, ok, measured, limit, margin}`, every orchestrator decision, model id, prompt hash. `decision_source: CONSENSUS | FALLBACK_SOLVER`. Approve / Override button. |
@@ -98,7 +94,7 @@ Properties: deterministic given agent outputs, cannot loop, every state change h
 
 **FIFO baseline** = the Round-0 seed, scored by the same cost functions.
 
-## 6. Message schema (Pydantic, strict; tool-use / JSON schema, temperature 0)
+## 6. Message schema (Pydantic, strict; structured output with a forced-tool fallback)
 
 ```json
 {"scenario_id":"WN1234-2015-06-12","round":2,"agent":"PILOT","decision":"COUNTER",
@@ -112,7 +108,7 @@ Properties: deterministic given agent outputs, cannot loop, every state change h
 
 `<scenario>.ledger.jsonl`, append-only. Entry `{seq, ts, prev_hash, hash, scenario_id, round, actor, type, payload}`; `hash = sha256(prev_hash + canonical_json)`. Model id, prompt version, prompt hash, output mode, latency and token usage ride in each `MESSAGE` payload as `attempt_<n>_call`. `triad verify` and `/api/runs/{id}/verify` recompute the chain; `triad audit` and `/audit.md|.json` rebuild the report from the file alone. The human decision is appended to the same chain as `HUMAN_DECISION`.
 
-## 8. Build order (minimum submittable at ~3 h)
+## 8. Build order
 
 Stack: Python 3.13, DuckDB over `flights.parquet`, Pydantic v2, `anthropic` SDK (structured outputs, Sonnet 5 live demo, Haiku 4.5 batch), FastAPI + SSE + single HTML page, pytest.
 
@@ -122,14 +118,14 @@ triad/ data.py scenario.py rules.py checkers.py costs.py solver.py messages.py v
 tests/ checkers · solver · ledger tamper · judge paths with stub agents · agents with a fake client · eval · audit + API
 ```
 
-| Phase | Deliverable | Status |
-|---|---|---|
-| P0 | `data.py` + parquet + `scenario.py`; CLI prints a scenario with provenance labels | done |
-| P1 | rules/checkers/costs/solver + FIFO; unit tests | done |
-| P2 | messages/ledger/judge/protocol with **stub agents** (seven policies, including reckless/flaky/broken) → full run, no model; then live agents with structured output and a forced-tool fallback | done |
-| P3 | API + dashboard: scenario card w/ badges, 3 agent columns per round, live rule panel, decision + source, Approve/Override (legal options only), audit download | done |
-| P4 | `eval.py` seeded scenarios × arms → `summary.md` (metrics, failure codes, cost); stub arms run, model arms pending a key | done / pending key |
-| P5 | README, limits, rehearsal | README done |
+| Phase | Deliverable |
+|---|---|
+| P0 | `data.py` + parquet + `scenario.py`; CLI prints a scenario with provenance labels |
+| P1 | rules/checkers/costs/solver + FIFO; unit tests |
+| P2 | messages/ledger/judge/protocol with **stub agents** (seven policies, including reckless/flaky/broken) → full run, no model; then live agents with structured output and a forced-tool fallback |
+| P3 | API + dashboard: scenario card w/ badges, 3 agent columns per round, live rule panel, decision + source, Approve/Override (legal options only), audit download |
+| P4 | `eval.py` seeded scenarios × arms → `summary.md` (metrics, failure codes, cost); stub arms and `llm[:model]` arms |
+| P5 | README, limits, demo walkthrough |
 
 Cut: `runway`, NOTAM parsing, heat-map. Kept: `REMOTE_STAND`, checkers, concession rule, fallback, ledger, eval.
 
@@ -139,12 +135,9 @@ Metrics: consensus rate & mean rounds · fallback rate by cause · infeasible co
 
 Failure cases shipped: (a) low fuel + full bank → no legal hold → fallback diverts, flagged; (b) agent counters with incompatible gate → checker rejects, logged with rule; (c) schema failure → abstain → fallback; (d) negotiated outcome worse than solver (gap > 0) — explain.
 
-Limits slide: synthetic fuel/gates/crew/pax, 2015 data, no live A-CDM integration, LLM latency, single-flight scope.
+Limits: synthetic fuel/gates/crew/pax, 2015 data, no live A-CDM integration, model latency, single-flight scope.
 
-3-min pitch: 0:00 user + $/min + A-CDM gap → 0:30 architecture ("code decides legality and cost; agents only negotiate"), schema, round rule → 1:30 live run on a real row → 2:30 batch metrics, gap, one failure, limits.
+Demo order: the user and the A-CDM gap → architecture ("code decides legality and cost; agents only negotiate"), schema, round rule → a live run on a real row (seeds 29, 7, 101) → batch metrics, gap, one failure, limits.
 
-Judge Q "why not just run the solver?": the solver needs every party to answer feasibility for every candidate under one fixed weighting; negotiation lets each party keep its data and priority-setting local, the solver stays the safety net, and we measured the cost of that trade-off (the gap).
+"Why not just run the solver?": the solver needs every party to answer feasibility for every candidate under one fixed weighting; negotiation lets each party keep its data and priority-setting local, the solver stays the safety net, and we measured the cost of that trade-off (the gap).
 
-## 10. Remaining before the pitch
-* Put `ANTHROPIC_API_KEY` in `.env`, run `triad negotiate --seed 29` live and `triad eval --arms yielding llm:claude-haiku-4-5-20251001 -n 20`, paste the model-arm row into the README table.
-* Rehearse the 3-minute script against `triad serve` with seeds 29, 7, 101.
