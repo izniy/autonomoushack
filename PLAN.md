@@ -82,6 +82,7 @@ Rounds 1–3 (3 model calls in parallel per round; round 3 is a vote — counter
     Shortlist shown to each agent = its 10 cheapest legal options ∪ 5 system-cheapest ∪ Pareto frontier (public weights), so the optimum is on every list
     all three ACCEPT (explicitly) → CONSENSUS
     else current = feasible counter with lowest total cost (tie → earliest slot); next round
+    no admissible counter in a non-final round → orchestrator tables the cheapest not-yet-tabled option that clears every threshold and costs ≤ FIFO, logged MEDIATOR_PROPOSAL (code proposes; agents still have to accept it)
 After round 3 without consensus, or any API error/timeout → FALLBACK_SOLVER with a fallback_code:
   NO_CONSENSUS_ROUND_CAP | NO_ACCEPTABLE_OPTION | AGENT_ABSTAINED | AGENT_ERROR | NO_FEASIBLE_LANDING
 ```

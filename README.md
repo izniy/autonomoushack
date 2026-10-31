@@ -25,7 +25,8 @@ Most multi-agent demos let the model decide the outcome. TRIAD does not.
 * **Code is the referee.** Legality, cost, the round winner, consensus and fallback are all
   deterministic. A model can only propose, accept, reject with a rule id, or explain. A
   hallucinated option is rejected with the rule it breaks; an infeasible counter is caught
-  every time, and the judge's ruling is on the record.
+  every time, and the judge's ruling is on the record. When a round stalls, the code tables
+  the cheapest plan every party can live with — and still needs all three to accept it.
 * **Measured against the truth, not against a story.** Every scenario has a FIFO status quo
   and a provably optimal solution enumerated from the full decision space. The evaluation runs
   30 seeded scenarios per arm and publishes the optimality gap, the fallback causes and the
@@ -137,7 +138,12 @@ non-regressive counter with the lowest system cost (mutually acceptable first, t
 slot) goes on the table. The table is therefore monotone: starting from FIFO, system cost
 never rises except for a fairness move that lifts the worst-off party and stays within FIFO
 cost, so a negotiated decision is never dearer for the system than the status quo — the
-evaluation checks that invariant end to end. After the round cap, two abstains by one agent, or any agent error, the solver's
+evaluation checks that invariant end to end. When a non-final round produces no admissible
+counter at all, the orchestrator does not let the round go to waste: it tables the cheapest
+option not yet tabled that clears every party's threshold and costs the system no more than FIFO
+(`MEDIATOR_PROPOSAL` in the ledger, source `mediator` on the proposal). This is single-text
+mediation — the code proposes, it never decides. The agents must still accept the mediated option
+in the next round, and they can counter or reject it like any other. After the round cap, two abstains by one agent, or any agent error, the solver's
 optimum is used and the outcome carries a `fallback_code`:
 `NO_CONSENSUS_ROUND_CAP | NO_ACCEPTABLE_OPTION | AGENT_ABSTAINED | AGENT_ERROR | NO_FEASIBLE_LANDING`.
 `DIVERT` is never negotiated: when no landing option is legal the outcome is `UNRESOLVED` with
@@ -287,7 +293,8 @@ policies: *Breaks rules* is `greedy`, *Never agrees* is `stubborn`, *Crashes* is
 `triad eval` runs arms over disjoint seeds with a thread pool and writes
 `runs/eval/<tag>/{rows.jsonl, summary.json, summary.md}` plus every ledger. Metrics:
 consensus rate (overall and given an option exists that clears every party's threshold),
-fallback codes, counters attempted vs infeasible counters caught, whether the final decision
+fallback codes, counters attempted vs infeasible counters caught, mediator proposals and the
+runs that needed one, whether the final decision
 passes all checkers (must be 1.00), whether the final decision is ever dearer than FIFO (must
 be 0), gap to the optimum and saving vs FIFO with bootstrap 95 % intervals over the shared
 seeds, the same figures on consensus runs only (so a non-cooperating arm cannot score on the
@@ -309,25 +316,33 @@ Stub arms over 30 seeds (`runs/eval/stubs-30`, reproducible with `triad eval --t
 
 | | agreeable | greedy | yielding | stubborn |
 |---|---|---|---|---|
-| consensus rate | 0.97 | 0.90 | 0.90 | 0.00 |
-| counters attempted / infeasible caught | 0 / 0 | 95 / 81 | 95 / 79 | 174 / 144 |
-| regressive counters discarded | 0 | 10 | 9 | 10 |
+| consensus rate | 0.97 | 0.93 | 0.93 | 0.00 |
+| counters attempted / infeasible caught | 0 / 0 | 97 / 83 | 97 / 82 | 174 / 144 |
+| regressive counters discarded | 0 | 10 | 10 | 10 |
+| mediator proposals / runs with one | 0 / 0 | 26 / 21 | 25 / 20 | 20 / 15 |
 | final decision passes all checkers | 1.00 | 1.00 | 1.00 | 1.00 |
 | final never dearer than FIFO | 1.00 | 1.00 | 1.00 | 1.00 |
-| gap to optimum, mean [95 % CI] | 257 [155, 371] | 151 [84, 227] | 142 [75, 220] | 0 |
-| saving vs FIFO, mean [95 % CI] | 0 | 107 [20, 214] | 115 [27, 225] | 257 |
-| share of runs at optimum | 0.38 | 0.48 | 0.55 | 1.00 |
-| consensus runs only: saving vs FIFO | 0 | 83 | 93 | – |
-| why consensus missed the optimum | not proposed 18 | not proposed 15 | not proposed 13 | – |
+| gap to optimum, mean [95 % CI] | 257 [155, 371] | 26 [0, 66] | 26 [0, 66] | 0 |
+| saving vs FIFO, mean [95 % CI] | 0 | 232 [140, 332] | 232 [140, 332] | 257 |
+| share of runs at optimum | 0.38 | 0.93 | 0.93 | 1.00 |
+| consensus runs only: saving vs FIFO | 0 | 240 | 240 | – |
+| why consensus missed the optimum | not proposed 18 | not proposed 4, voted down 7 | not proposed 3, voted down 7 | – |
 
 Read honestly: `agreeable` reaches consensus on the FIFO seed every time, which is vacuous;
 `stubborn` scores a perfect gap only because the solver decides every time, which is why the
-consensus-only row exists. `greedy` and `yielding` now beat FIFO with intervals that exclude
-zero; before the no-regression rule they lost to it (−188 and −104), because a legal conceding
-counter could win a round while being dearer for the system than the table. Every remaining
-gap has the same cause: the optimum was on all three shortlists and nobody proposed it — the
-stubs counter by their own cost alone, by design. That is the headroom the live arm is
-measured against, and its numbers are only meaningful when produced with a key — see Limits.
+consensus-only row exists. `greedy` and `yielding` beat FIFO with intervals that exclude zero.
+Two protocol changes account for that, and each is visible in the table. The no-regression
+rule: before it they lost to FIFO (−188 and −104), because a legal conceding counter could win
+a round while being dearer for the system than the table. The mediator proposal: before it the
+share of runs at optimum was 0.48 and 0.55 and every miss had the same cause — the optimum was
+on all three shortlists and nobody proposed it, since the stubs counter by their own cost alone.
+Rounds in which every counter was discarded used to repeat the table; now the orchestrator
+tables the cheapest mutually acceptable option instead, which fires in about two thirds of the
+runs and nearly doubles the share at optimum. The misses that remain are the optimum being
+tabled and voted down, or a stub still not proposing it. `stubborn` gets the same mediated
+proposals and rejects them all, so the mediator never manufactures a consensus. That is the
+headroom the live arm is measured against, and its numbers are only meaningful when produced
+with a key — see Limits.
 
 ## Limits and caveats
 
