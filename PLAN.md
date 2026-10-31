@@ -78,6 +78,8 @@ Rounds 1–3 (3 model calls in parallel per round; round 3 is a vote — counter
     REJECT citing rules the proposal passes → logged UNFOUNDED_REJECT (counts as a plain non-accept)
     COUNTER → run all 3 checkers; infeasible → logged INFEASIBLE_COUNTER and discarded
     COUNTER must be a concession: agent's own cost(new) ≥ own cost(previous counter) else logged NON_CONCESSION, discarded
+    COUNTER must not regress: system cost ≤ table's, unless it lifts the worst-off party within FIFO cost; else REGRESSIVE_COUNTER, discarded (table monotone ⇒ final ≤ FIFO)
+    Shortlist shown to each agent = its 10 cheapest legal options ∪ 5 system-cheapest ∪ Pareto frontier (public weights), so the optimum is on every list
     all three ACCEPT (explicitly) → CONSENSUS
     else current = feasible counter with lowest total cost (tie → earliest slot); next round
 After round 3 without consensus, or any API error/timeout → FALLBACK_SOLVER with a fallback_code:

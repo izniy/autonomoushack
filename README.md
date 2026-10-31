@@ -129,11 +129,15 @@ concessions, rationale, confidence). The judge then checks it:
 | `COUNTER_OK` | feasible counter that is a concession; candidate to go on the table |
 | `INFEASIBLE_COUNTER` | fails any party's checker (or references nothing) — discarded, rules logged |
 | `NON_CONCESSION` | cheaper for the proposer than its last counter — discarded |
+| `REGRESSIVE_COUNTER` | dearer for the system than the table, and does not lift the worst-off party within FIFO cost — discarded |
 | `LATE_COUNTER` | counter in the final round, which only votes — ignored |
 
-Consensus is three explicit `ACCEPT`s in one round. Otherwise the feasible conceding counter
-with the lowest system cost (mutually acceptable first, tie → earliest slot) goes on the
-table. After the round cap, two abstains by one agent, or any agent error, the solver's
+Consensus is three explicit `ACCEPT`s in one round. Otherwise the feasible, conceding,
+non-regressive counter with the lowest system cost (mutually acceptable first, tie → earliest
+slot) goes on the table. The table is therefore monotone: starting from FIFO, system cost
+never rises except for a fairness move that lifts the worst-off party and stays within FIFO
+cost, so a negotiated decision is never dearer for the system than the status quo — the
+evaluation checks that invariant end to end. After the round cap, two abstains by one agent, or any agent error, the solver's
 optimum is used and the outcome carries a `fallback_code`:
 `NO_CONSENSUS_ROUND_CAP | NO_ACCEPTABLE_OPTION | AGENT_ABSTAINED | AGENT_ERROR | NO_FEASIBLE_LANDING`.
 `DIVERT` is never negotiated: when no landing option is legal the outcome is `UNRESOLVED` with
@@ -145,8 +149,12 @@ suitable.
 
 Each round the judge freezes all three views before the three calls go out in parallel, so no
 agent's answer in a round can enter another's prompt in that round. A view holds the party's
-own private state and verdicts, the proposal on the table, its own shortlist of legal options
-(with its own costs and utility), and the public log. Other parties appear in the public log
+own private state and verdicts, the proposal on the table, its shortlist of legal options
+(with its own costs and utility), and the public log. The shortlist is the party's ten cheapest
+legal options plus the five cheapest for the system and the Pareto frontier of the three party
+costs — both computed from the public weights, so nothing private leaks — which guarantees the
+optimum is on every party's list and no agent can miss it merely because it was not among its
+own ten cheapest. Other parties appear in the public log
 only as **structured fields** — decision, proposal key, cited rule ids, and the judge's ruling
 with its reason. Their free-text rationale is written to the ledger for the duty manager and is
 never replayed into another agent's prompt, so one model's output cannot become instructions
@@ -280,8 +288,13 @@ policies: *Breaks rules* is `greedy`, *Never agrees* is `stubborn`, *Crashes* is
 `runs/eval/<tag>/{rows.jsonl, summary.json, summary.md}` plus every ledger. Metrics:
 consensus rate (overall and given an option exists that clears every party's threshold),
 fallback codes, counters attempted vs infeasible counters caught, whether the final decision
-passes all checkers (must be 1.00), gap to the optimum, saving vs FIFO, per-party minimum
-utility, rounds, wall time, model calls, tokens and an estimated USD per run.
+passes all checkers (must be 1.00), whether the final decision is ever dearer than FIFO (must
+be 0), gap to the optimum and saving vs FIFO with bootstrap 95 % intervals over the shared
+seeds, the same figures on consensus runs only (so a non-cooperating arm cannot score on the
+solver's work), an attribution of every consensus run that missed the optimum (not visible to
+any party / visible but never proposed / proposed but lost the round / on the table and voted
+down), per-party minimum utility, rounds, wall time, model calls, tokens and an estimated USD
+per run.
 
 The dashboard's Results view shows the same measures. The live arm from 31 October ran ten
 unseen flights (seeds 1000 to 1009) with Claude Opus 5.5 as all three agents. The agents
@@ -296,21 +309,25 @@ Stub arms over 30 seeds (`runs/eval/stubs-30`, reproducible with `triad eval --t
 
 | | agreeable | greedy | yielding | stubborn |
 |---|---|---|---|---|
-| consensus rate | 0.97 | 0.87 | 0.90 | 0.00 |
-| counters attempted / infeasible caught | 0 / 0 | 93 / 84 | 93 / 78 | 174 / 144 |
+| consensus rate | 0.97 | 0.90 | 0.90 | 0.00 |
+| counters attempted / infeasible caught | 0 / 0 | 95 / 81 | 95 / 79 | 174 / 144 |
+| regressive counters discarded | 0 | 10 | 9 | 10 |
 | final decision passes all checkers | 1.00 | 1.00 | 1.00 | 1.00 |
-| gap to optimum, mean | 257 | 445 | 361 | 0 |
-| saving vs FIFO, mean | 0 | −188 | −104 | 257 |
-| share of runs at optimum | 0.38 | 0.45 | 0.55 | 1.00 |
+| final never dearer than FIFO | 1.00 | 1.00 | 1.00 | 1.00 |
+| gap to optimum, mean [95 % CI] | 257 [155, 371] | 151 [84, 227] | 142 [75, 220] | 0 |
+| saving vs FIFO, mean [95 % CI] | 0 | 107 [20, 214] | 115 [27, 225] | 257 |
+| share of runs at optimum | 0.38 | 0.48 | 0.55 | 1.00 |
+| consensus runs only: saving vs FIFO | 0 | 83 | 93 | – |
+| why consensus missed the optimum | not proposed 18 | not proposed 15 | not proposed 13 | – |
 
 Read honestly: `agreeable` reaches consensus on the FIFO seed every time, which is vacuous;
-`greedy` and `yielding` reach consensus on options that are *worse for the system than
-FIFO* on average, because the judge lets a legal, conceding counter win when it is cheapest
-among the counters offered, not among all options; `stubborn` scores a perfect gap only
-because the solver decides every time. The point of the stub arms is to show what the
-protocol does with each behaviour and that no illegal proposal ever got through, not to
-claim a saving. The live-model arm is what has to beat FIFO, and its numbers are only
-meaningful when produced with a key — see Limits.
+`stubborn` scores a perfect gap only because the solver decides every time, which is why the
+consensus-only row exists. `greedy` and `yielding` now beat FIFO with intervals that exclude
+zero; before the no-regression rule they lost to it (−188 and −104), because a legal conceding
+counter could win a round while being dearer for the system than the table. Every remaining
+gap has the same cause: the optimum was on all three shortlists and nobody proposed it — the
+stubs counter by their own cost alone, by design. That is the headroom the live arm is
+measured against, and its numbers are only meaningful when produced with a key — see Limits.
 
 ## Limits and caveats
 
@@ -321,8 +338,8 @@ meaningful when produced with a key — see Limits.
 * **Cost weights are public assumptions**, not airline figures; the system cost is in
   USD-like units. Utilities are normalised per party over the feasible set, so a utility of
   1 means "my cheapest legal option", not "free".
-* **Consensus can be vacuous** (see above); the gap to the optimum and the saving vs FIFO
-  are the honest measures.
+* **Consensus can be vacuous** (see above); the gap to the optimum, the saving vs FIFO and
+  their consensus-only versions are the honest measures.
 * **No live model results are shipped unless a key was available when the evaluation ran.**
   Without `ANTHROPIC_API_KEY` the live agents abstain, the judge records `AGENT_ERROR` and the
   solver decides — the system degrades to a flagged deterministic answer rather than

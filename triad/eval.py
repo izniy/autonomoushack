@@ -19,6 +19,7 @@ and ledgers/ (one hash-chained ledger per run).
 from __future__ import annotations
 
 import json
+import random
 import statistics
 import time
 from collections import Counter
@@ -98,7 +99,8 @@ def row_for(arm: str, seed: int, s: Scenario, o: Outcome, ledger: Ledger) -> dic
         "final_feasible": o.final.feasible,
         "counters_attempted": o.counters_attempted, "infeasible_counters_caught": o.infeasible_counters_caught,
         "non_concessions": o.non_concessions, "self_violations": o.self_violations,
-        "unfounded_rejects": o.unfounded_rejects, "late_counters": o.late_counters, "abstains": o.abstains,
+        "unfounded_rejects": o.unfounded_rejects, "late_counters": o.late_counters,
+        "regressive_counters": o.regressive_counters, "abstains": o.abstains, "gap_cause": o.gap_cause,
         "wall_s": round(o.wall_s, 3), **use,
         "ledger_entries": len(ledger.entries), "ledger_head": ledger.head,
         "outcome_hist": dict(hist),
@@ -150,6 +152,17 @@ def _mean(xs: list[float]) -> float | None:
     return round(statistics.fmean(xs), 3) if xs else None
 
 
+def _ci95(xs: list[float], resamples: int = 2000, seed: int = 0) -> tuple[float, float] | None:
+    """Bootstrap 95 % interval of the mean. Arms share seeds, so per-seed values are paired
+    observations and the interval of a mean difference from FIFO or the optimum is exact to use."""
+    if len(xs) < 2:
+        return None
+    rng = random.Random(seed)
+    n = len(xs)
+    means = sorted(sum(rng.choice(xs) for _ in range(n)) / n for _ in range(resamples))
+    return round(means[int(0.025 * resamples)], 1), round(means[int(0.975 * resamples)], 1)
+
+
 def _median(xs: list[float]) -> float | None:
     return round(statistics.median(xs), 3) if xs else None
 
@@ -181,13 +194,20 @@ def summarize_arm(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "self_violations": sum(r["self_violations"] for r in rows),
             "unfounded_rejects": sum(r["unfounded_rejects"] for r in rows),
             "late_counters": sum(r["late_counters"] for r in rows),
+            "regressive_counters": sum(r["regressive_counters"] for r in rows),
             "abstains": sum(r["abstains"] for r in rows),
         },
+        "never_dearer_than_fifo_rate": round(sum(r["saving_vs_fifo"] >= 0 for r in neg) / len(neg), 3) if neg else None,
+        "gap_cause": dict(sorted(Counter(r["gap_cause"] for r in cons).items())),
         "gap_vs_optimum_mean": _mean([r["gap_vs_optimum"] for r in neg]),
         "gap_vs_optimum_median": _median([r["gap_vs_optimum"] for r in neg]),
         "share_at_optimum": round(sum(r["gap_vs_optimum"] <= 0 for r in neg) / len(neg), 3) if neg else None,
         "gap_vs_optimum_mean_consensus_only": _mean([r["gap_vs_optimum"] for r in cons]),
+        "share_at_optimum_consensus_only": round(sum(r["gap_vs_optimum"] <= 0 for r in cons) / len(cons), 3) if cons else None,
+        "gap_vs_optimum_ci95": _ci95([r["gap_vs_optimum"] for r in neg]),
         "saving_vs_fifo_mean": _mean([r["saving_vs_fifo"] for r in neg]),
+        "saving_vs_fifo_ci95": _ci95([r["saving_vs_fifo"] for r in neg]),
+        "saving_vs_fifo_mean_consensus_only": _mean([r["saving_vs_fifo"] for r in cons]),
         "min_utility_mean": {
             "final": _mean([r["min_utility_final"] for r in neg]),
             "fifo": _mean([r["min_utility_fifo"] for r in neg]),
@@ -220,6 +240,10 @@ def _f(x: Any, fmt: str = ".2f") -> str:
     return "–" if x is None else format(x, fmt)
 
 
+def _ci(ci: tuple[float, float] | list[float] | None) -> str:
+    return "–" if not ci else f"[{ci[0]:,.0f}, {ci[1]:,.0f}]"
+
+
 def summary_markdown(summary: dict[str, Any]) -> str:
     arms = summary["arms"]
     names = list(arms)
@@ -241,9 +265,16 @@ def summary_markdown(summary: dict[str, Any]) -> str:
     row("counters attempted / infeasible caught", lambda a: f"{a['counters_attempted']} / {a['infeasible_counters_caught']}")
     row("final decision passes all checkers", lambda a: _f(a["final_feasible_rate"]))
     row("violations", lambda a: json.dumps({k: v for k, v in a["violations"].items() if v}) or "{}")
+    row("final never dearer than FIFO", lambda a: _f(a["never_dearer_than_fifo_rate"]))
     row("gap vs optimum mean / median", lambda a: f"{_f(a['gap_vs_optimum_mean'], '.0f')} / {_f(a['gap_vs_optimum_median'], '.0f')}")
+    row("gap vs optimum 95 % CI", lambda a: _ci(a["gap_vs_optimum_ci95"]))
     row("share of runs at optimum", lambda a: _f(a["share_at_optimum"]))
+    row("consensus runs only: gap mean / at optimum",
+        lambda a: f"{_f(a['gap_vs_optimum_mean_consensus_only'], '.0f')} / {_f(a['share_at_optimum_consensus_only'])}")
+    row("why consensus missed the optimum", lambda a: json.dumps(a["gap_cause"]))
     row("saving vs FIFO mean", lambda a: _f(a["saving_vs_fifo_mean"], ".0f"))
+    row("saving vs FIFO 95 % CI", lambda a: _ci(a["saving_vs_fifo_ci95"]))
+    row("consensus runs only: saving vs FIFO mean", lambda a: _f(a["saving_vs_fifo_mean_consensus_only"], ".0f"))
     row("min utility final / FIFO / opt", lambda a: " / ".join(_f(a["min_utility_mean"][k]) for k in ("final", "fifo", "optimum")))
     row("Δ vs FIFO: delay min / fuel kg / missed pax",
         lambda a: " / ".join(_f(a["delta_vs_fifo_mean"][k], ".1f") for k in ("delay_min", "fuel_kg", "missed_pax")))
@@ -255,8 +286,12 @@ def summary_markdown(summary: dict[str, Any]) -> str:
     lines.append("Every counter is re-evaluated by all three checkers before it can win a round, so "
                  "`infeasible caught` counts the counters that were tried and discarded; `final decision "
                  "passes all checkers` is the end-to-end safety check. `gap` and `saving` are system-cost "
-                 "units (USD-like, public weights). USD is an estimate from list prices in "
-                 "`config.PRICES_PER_MTOK`.")
+                 "units (USD-like, public weights); the 95 % intervals are bootstrap intervals of the mean "
+                 "over seeds. `final never dearer than FIFO` checks the no-regression invariant end to "
+                 "end. `why consensus missed the optimum` attributes each consensus run's gap: the "
+                 "optimum was never on any party's shortlist, was visible but never proposed, was "
+                 "proposed but lost its round to a cheaper counter, or was on the table and voted down. "
+                 "USD is an estimate from list prices in `config.PRICES_PER_MTOK`.")
     return "\n".join(lines)
 
 
