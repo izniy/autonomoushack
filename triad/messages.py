@@ -26,7 +26,9 @@ class AgentMessage(BaseModel):
     agent: Party3
     decision: Decision
     proposal: Proposal | None = Field(default=None, description="required for COUNTER")
-    rejected_rule_ids: list[str] = Field(default_factory=list, description="rules the current proposal fails for me (REJECT)")
+    rejected_rule_ids: list[str] = Field(
+        default_factory=list,
+        description="REJECT: rules the current proposal fails for me; empty = a vote against on preference")
     concessions: list[str] = Field(default_factory=list, description="what I am giving up relative to my preferred option")
     rationale: str = Field(max_length=600)
     confidence: float = Field(ge=0.0, le=1.0, default=0.7)
@@ -37,16 +39,18 @@ class AgentMessage(BaseModel):
             raise ValueError("COUNTER requires a proposal")
         if self.decision != "COUNTER" and self.proposal is not None:
             raise ValueError("only COUNTER carries a proposal")
-        if self.decision == "REJECT" and not self.rejected_rule_ids:
-            raise ValueError("REJECT must name at least one rule id")
+        if self.decision != "REJECT" and self.rejected_rule_ids:
+            raise ValueError("only REJECT names rejected rules")
         return self
 
 
 class Candidate(BaseModel):
-    """One option as seen by a single party: its own verdicts and its own cost only."""
+    """One option as seen by a single party: its own verdicts, cost and utility only."""
     proposal: Proposal
     feasible_for_me: bool
     my_cost: float
+    my_utility: float                   # 1 = my cheapest legal option, 0 = my dearest
+    acceptable_for_me: bool             # feasible and utility >= the public threshold
     my_breakdown: dict[str, float]
     verdicts: list[Verdict]
     summary: str
@@ -68,12 +72,15 @@ class AgentView(BaseModel):
     party: Party3
     round: int
     max_rounds: int
+    final_round: bool                   # last round is a vote: ACCEPT or REJECT only
     situation: str                      # public disruption note + public timeline
     private_state: dict[str, Any]       # this party's own data, in plain terms
     current: Candidate                  # the proposal on the table, through my own checker
     options: list[Candidate]            # my shortlist, through my own checker (not others')
     public_log: list[PriorMessage]
     my_last_counter_cost: float | None  # concession floor: a new counter may not cost me less
+    acceptance_threshold: float         # public utility threshold the judge uses
+    mutually_acceptable_exists: bool    # judge: at least one option clears every party's threshold
     weights: dict[str, float]
 
 

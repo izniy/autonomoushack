@@ -5,6 +5,7 @@ import json
 import pytest
 
 from triad import config
+from triad.judge import Judge, Reply
 from triad.ledger import Ledger, verify_entries, verify_file
 from triad.messages import parse_message
 from triad.proposal import Proposal
@@ -23,9 +24,11 @@ def test_counter_requires_proposal():
         parse_message({"decision": "COUNTER", "rationale": "x"}, "ATC")
 
 
-def test_reject_requires_rule_ids():
+def test_only_reject_names_rules():
+    # a REJECT without rules is a vote against on preference; rules on an ACCEPT make no sense
+    assert parse_message({"decision": "REJECT", "rationale": "x"}, "ATC").rejected_rule_ids == []
     with pytest.raises(ValueError):
-        parse_message({"decision": "REJECT", "rationale": "x"}, "ATC")
+        parse_message({"decision": "ACCEPT", "rationale": "x", "rejected_rule_ids": ["ATC-HOLD-MAX"]}, "ATC")
 
 
 def test_accept_must_not_carry_proposal():
@@ -150,25 +153,18 @@ def _infeasible_for(scenario, party):
 
 @requires_data
 def test_self_violation_is_refused(scenario):
-    # Nothing infeasible can reach the table through a counter, so forge the seed: put a
-    # proposal that fails PILOT's own rules on the table and have everyone ACCEPT it.
-    from triad import protocol
-
+    # Nothing infeasible can reach the table through a counter, so seed the judge with a
+    # proposal that fails PILOT's own rules and have everyone ACCEPT it.
     bad = _infeasible_for(scenario, "PILOT")
-    orig = protocol.fifo_baseline
-    protocol.fifo_baseline = lambda s, evals=None: bad   # forged seed for this test only
-    try:
-        agents = {
-            "ATC": _Scripted("ATC", [{"agent": "ATC", "decision": "ACCEPT", "rationale": "ok"}]),
-            "PILOT": _Scripted("PILOT", [{"agent": "PILOT", "decision": "ACCEPT", "rationale": "ok"}]),
-            "GROUND": _Scripted("GROUND", [{"agent": "GROUND", "decision": "ACCEPT", "rationale": "ok"}]),
-        }
-        out, led = run(scenario, agents, max_rounds=1)
-    finally:
-        protocol.fifo_baseline = orig
+    judge = Judge(scenario, max_rounds=1, seed=bad)
+    views = judge.start_round(1)
+    replies = {p: Reply(parse_message({"decision": "ACCEPT", "rationale": "ok"}, p)) for p in views}
+    j = judge.judge_round(1, replies)
+    out = judge.finish({}, 0.0)
+    assert j.outcomes["PILOT"] == "SELF_VIOLATION" and not j.consensus
     assert out.self_violations >= 1
     assert out.decision_source == "FALLBACK_SOLVER", "a refused ACCEPT must not count towards consensus"
-    assert "PILOT" in {e.payload["agent"] for e in led.of_type("SELF_VIOLATION")}
+    assert "PILOT" in {e.payload["agent"] for e in judge.ledger.of_type("SELF_VIOLATION")}
 
 
 @requires_data
@@ -209,7 +205,7 @@ def test_unknown_slot_in_counter_is_caught_as_schema_violation(scenario):
         "PILOT": StubAgent("PILOT", "agreeable"),
         "GROUND": StubAgent("GROUND", "agreeable"),
     }
-    out, led = run(scenario, agents, max_rounds=1)
+    out, led = run(scenario, agents, max_rounds=2)   # round 1 is not the vote round
     e = led.of_type("INFEASIBLE_COUNTER")[0]
     assert e.payload["failing_rules"][0]["rule_id"] == "PUB-SCHEMA"
     assert out.infeasible_counters_caught == 1
@@ -222,3 +218,104 @@ def test_outcome_metrics_are_consistent(scenario):
     assert out.final.system_cost >= out.optimum.system_cost
     assert out.gap_vs_optimum >= 0
     assert out.counters_attempted >= out.infeasible_counters_caught + out.non_concessions
+    assert 0.0 <= out.min_utility_final <= 1.0
+
+
+# ---------------------------------------------------------------- judge
+
+def _accept(p):
+    return Reply(parse_message({"decision": "ACCEPT", "rationale": "ok"}, p))
+
+
+@requires_data
+def test_utilities_are_normalised_over_the_feasible_landing_set(scenario):
+    j = Judge(scenario)
+    assert j.feasible and all(e.proposal.pilot_action != "DIVERT" for e in j.feasible)
+    for p in ("ATC", "PILOT", "GROUND"):
+        us = [j.utility(p, e) for e in j.feasible]
+        assert max(us) == 1.0 and min(us) == 0.0 or len(set(us)) == 1
+    # the optimum clears the threshold for everyone whenever anything does
+    if j.acceptable:
+        assert all(j.utility(p, j.opt) >= 0 for p in ("ATC", "PILOT", "GROUND"))
+    assert j.ledger.of_type("SCENARIO")[0].payload["n_mutually_acceptable"] == len(j.acceptable)
+
+
+@requires_data
+def test_final_round_counter_is_a_late_counter(scenario):
+    j = Judge(scenario, max_rounds=1)
+    views = j.start_round(1)
+    assert all(v.final_round for v in views.values())
+    best = views["ATC"].options[0].proposal.model_dump()
+    replies = {"ATC": Reply(parse_message({"decision": "COUNTER", "proposal": best, "rationale": "x"}, "ATC")),
+               "PILOT": _accept("PILOT"), "GROUND": _accept("GROUND")}
+    res = j.judge_round(1, replies)
+    assert res.outcomes["ATC"] == "LATE_COUNTER" and res.stop and not res.consensus
+    out = j.finish({}, 0.0)
+    assert out.late_counters == 1 and out.counters_attempted == 0
+    assert out.fallback_code in ("NO_CONSENSUS_ROUND_CAP", "NO_ACCEPTABLE_OPTION")
+
+
+@requires_data
+def test_preference_reject_is_legitimate_but_blocks_consensus(scenario):
+    j = Judge(scenario, max_rounds=1)
+    j.start_round(1)
+    replies = {"ATC": Reply(parse_message({"decision": "REJECT", "rationale": "too costly for us"}, "ATC")),
+               "PILOT": _accept("PILOT"), "GROUND": _accept("GROUND")}
+    res = j.judge_round(1, replies)
+    assert res.outcomes["ATC"] == "REJECT_PREFERENCE" and not res.consensus
+    assert j.unfounded == 0
+    assert "my_utility" in j.ledger.of_type("REJECT_PREFERENCE")[0].payload
+
+
+@requires_data
+def test_divert_counter_is_refused_as_public_rule(scenario):
+    j = Judge(scenario, max_rounds=2)
+    j.start_round(1)
+    divert = {"slot_id": None, "pilot_action": "DIVERT", "gate": None}
+    replies = {"PILOT": Reply(parse_message({"decision": "COUNTER", "proposal": divert, "rationale": "x"}, "PILOT")),
+               "ATC": _accept("ATC"), "GROUND": _accept("GROUND")}
+    res = j.judge_round(1, replies)
+    assert res.outcomes["PILOT"] == "INFEASIBLE_COUNTER"
+    assert "PUB-DIVERT" in j.ledger.of_type("INFEASIBLE_COUNTER")[0].payload["failing_rules"][0]["detail"]
+    assert all(c.proposal.pilot_action != "DIVERT" for c in j.view("PILOT", 1).options)
+
+
+@requires_data
+def test_round_winner_prefers_mutually_acceptable_counters(scenario):
+    j = Judge(scenario, max_rounds=3)
+    if not j.acceptable:
+        pytest.skip("scenario has no mutually acceptable option")
+    acc = max(j.acceptable, key=lambda e: e.system_cost)                   # dearest acceptable
+    cheaper = [e for e in j.feasible if not j.is_acceptable(e) and e.system_cost < acc.system_cost]
+    if not cheaper:
+        pytest.skip("no cheaper unacceptable counter to compare against")
+    assert j.pick_winner([("ATC", cheaper[0]), ("PILOT", acc)]).proposal.key() == acc.proposal.key()
+
+
+@requires_data
+def test_agent_errors_get_their_own_reason_code(scenario):
+    class Crashing(StubAgent):
+        def respond(self, view, error=None):
+            raise RuntimeError("connection reset")
+
+    agents = {"ATC": Crashing("ATC"), "PILOT": StubAgent("PILOT", "agreeable"), "GROUND": StubAgent("GROUND", "agreeable")}
+    out, led = run(scenario, agents)
+    assert out.decision_source == "FALLBACK_SOLVER" and out.fallback_code == "AGENT_ERROR"
+    assert out.rounds_used == config.MAX_ABSTAINS_PER_AGENT
+    assert "traceback" in led.of_type("ABSTAIN")[0].payload["raw"]
+
+
+def test_no_feasible_landing_is_unresolved_not_a_diversion_order():
+    from triad.scenario import random_scenario
+
+    s = random_scenario(seed=29)
+    # Starve the aircraft of fuel so that no landing option is legal.
+    s.pilot.fuel.fuel_on_board_kg = 0.0
+    j = Judge(s)
+    assert j.unresolved and j.decision_source == "UNRESOLVED" and j.code == "NO_FEASIBLE_LANDING"
+    out = j.finish({}, 0.0)
+    assert out.final.proposal.pilot_action == "DIVERT"
+    assert out.diversion_assessment and out.diversion_assessment["landing_options_failed_by_rule"]
+    assert j.ledger.of_type("DECISION")[0].payload["requires_human_approval"] is True
+    out2, _ = run(s, stub_team("agreeable"))
+    assert out2.decision_source == "UNRESOLVED" and out2.rounds_used == 0

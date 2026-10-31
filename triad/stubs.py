@@ -61,6 +61,7 @@ class StubAgent:
             return {**base, "decision": "ACCEPT", "rationale": "passes my rules"}
 
         if self.policy == "stubborn":
+            # ignores the final-round vote rule on purpose (trips LATE_COUNTER)
             return {**base, "decision": "COUNTER", "proposal": best.proposal.model_dump(),
                     "rationale": f"my best option, cost {best.my_cost:.0f}"}
 
@@ -68,6 +69,13 @@ class StubAgent:
         if cur.feasible_for_me and best is not None and cur.my_cost <= best.my_cost * (1 + self.tolerance) + 1:
             return {**base, "decision": "ACCEPT", "rationale": f"within tolerance of my best ({best.my_cost:.0f})",
                     "concessions": [f"accepting cost {cur.my_cost:.0f} vs best {best.my_cost:.0f}"]}
+        if view.final_round:
+            # The last round is a vote: accept anything that clears my own threshold, else vote no.
+            if cur.acceptable_for_me:
+                return {**base, "decision": "ACCEPT", "rationale": f"final vote: utility {cur.my_utility} clears threshold",
+                        "concessions": [f"accepting cost {cur.my_cost:.0f} vs best {best.my_cost:.0f}" if best else "none"]}
+            return {**base, "decision": "REJECT", "rejected_rule_ids": fails,
+                    "rationale": f"final vote: utility {cur.my_utility} below threshold {view.acceptance_threshold}"}
         pick = best
         if self.policy == "yielding":
             # Concede one step per round, but never below the concession floor.

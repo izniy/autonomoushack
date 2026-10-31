@@ -25,6 +25,11 @@ MAX_ROUNDS = 3
 SCHEMA_RETRIES = 1
 MAX_ABSTAINS_PER_AGENT = 2
 
+# A proposal is "acceptable" for a party when its normalised utility over the feasible set
+# (1 = my cheapest legal option, 0 = my dearest) is at least this. Shown to agents, used by
+# the judge to pick round winners and to report consensus availability. Never a hard rule.
+ACCEPTANCE_THRESHOLD = float(os.getenv("TRIAD_ACCEPTANCE_THRESHOLD", "0.35"))
+
 # Disruption filter from the challenge brief.
 WEATHER_DELAY_MIN = 15
 LATE_AIRCRAFT_DELAY_MIN = 20
