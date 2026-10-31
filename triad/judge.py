@@ -221,10 +221,16 @@ class Judge:
             scenario_id=s.id, party=party, round=rnd, max_rounds=self.max_rounds,
             final_round=self.is_final_round(rnd), situation=situation_text(s, self.max_rounds),
             private_state=private_state(s, party), current=cand(self.current),
-            options=[cand(e) for e in mine[:SHORTLIST]], public_log=list(self.log),
+            options=[cand(e) for e in mine[:SHORTLIST]], public_log=self.public_log_for(party),
             my_last_counter_cost=self.last_counter_cost[party], acceptance_threshold=self.threshold,
             mutually_acceptable_exists=bool(self.acceptable), weights=s.weights.model_dump(),
         )
+
+    def public_log_for(self, party: Party3) -> list[PriorMessage]:
+        """Other parties' messages reach a prompt only as structured fields (decision, proposal,
+        cited rules, the judge's ruling). Their free text is for the human on the dashboard and
+        stays in the ledger, so one model's output can never be instructions to another."""
+        return [m if m.agent == party else m.model_copy(update={"rationale": ""}) for m in self.log]
 
     def start_round(self, rnd: int) -> dict[Party3, AgentView]:
         self.ledger.append("ROUND_START", "ORCHESTRATOR", rnd, {
@@ -253,7 +259,7 @@ class Judge:
             msgs_rec[p] = {"decision": "ABSTAIN", "reason": reply.error}
             led.append("ABSTAIN", p, rnd, {"reason": reply.error, "raw": reply.raw})
             self.log.append(PriorMessage(round=rnd, agent=p, decision="REJECT", proposal_key=None,
-                                         rationale=f"(abstained: {reply.error[:120]})", outcome="ABSTAIN"))
+                                         rationale="", outcome="ABSTAIN", detail=f"abstained: {reply.error[:120]}"))
             return
 
         msg = reply.message
@@ -346,7 +352,8 @@ class Judge:
 
         self.log.append(PriorMessage(round=rnd, agent=p, decision=msg.decision,
                                      proposal_key=msg.proposal.key() if msg.proposal else None,
-                                     rationale=msg.rationale, outcome=outcomes[p], detail=detail))
+                                     cited_rules=sorted(msg.rejected_rule_ids), rationale=msg.rationale,
+                                     outcome=outcomes[p], detail=detail))
 
     def pick_winner(self, ok_counters: list[tuple[str, Evaluation]]) -> Evaluation | None:
         """Lowest system cost among feasible, conceding counters; those clearing every party's

@@ -114,7 +114,8 @@ How to negotiate well:
     threshold marks what the judge treats as acceptable for you. Accept proposals at or above
     it unless you can name a concretely better option the others can plausibly live with.
   - Concede early rather than late: a round spent re-proposing your favourite is a round closer
-    to the solver. Read the other parties' rationales and cited rules.
+    to the solver. Read the public log: what the others accepted, countered or rejected, the
+    rules they cited and how the judge ruled. You see their decisions, not their prose.
   - If the proposal on the table fails your rules, REJECT citing them, or COUNTER with the
     closest legal alternative.
   - Rationale: plain language for the airline duty manager, under 400 characters, naming the
@@ -165,7 +166,9 @@ def render_view(v: AgentView) -> str:
         lines.append("(none yet)")
     for m in v.public_log:
         lines.append(f"- r{m.round} {m.agent} {m.decision}" + (f" {m.proposal_key}" if m.proposal_key else "")
-                     + f" -> {m.outcome}" + (f" [{m.detail}]" if m.detail else "") + f": {m.rationale}")
+                     + (f" citing {m.cited_rules}" if m.cited_rules else "")
+                     + f" -> {m.outcome}" + (f" [{m.detail}]" if m.detail else "")
+                     + (f": {m.rationale}" if m.rationale else ""))
     lines += ["", "Answer for this round as one JSON object."]
     return "\n".join(lines)
 

@@ -63,7 +63,26 @@ table. After the round cap, two abstains by one agent, or any agent error, the s
 optimum is used and the outcome carries a `fallback_code`:
 `NO_CONSENSUS_ROUND_CAP | NO_ACCEPTABLE_OPTION | AGENT_ABSTAINED | AGENT_ERROR | NO_FEASIBLE_LANDING`.
 `DIVERT` is never negotiated: when no landing option is legal the outcome is `UNRESOLVED` with
-a diversion assessment for the duty manager.
+a diversion assessment for the duty manager. That assessment is a simulation over the synthetic
+fuel figures and the nearest airport by distance — it is not evidence that the alternate is
+suitable.
+
+### What reaches a prompt
+
+Each round the judge freezes all three views before the three calls go out in parallel, so no
+agent's answer in a round can enter another's prompt in that round. A view holds the party's
+own private state and verdicts, the proposal on the table, its own shortlist of legal options
+(with its own costs and utility), and the public log. Other parties appear in the public log
+only as **structured fields** — decision, proposal key, cited rule ids, and the judge's ruling
+with its reason. Their free-text rationale is written to the ledger for the duty manager and is
+never replayed into another agent's prompt, so one model's output cannot become instructions
+to another; an agent sees only its own earlier prose. The orchestrator never holds raw private
+data from any party, only verdicts (`rule_id, ok, measured, limit, margin`) and scalar costs.
+
+A model call has one schema repair at most. A provider error (timeout, API failure) abstains
+immediately without a repair call; SDK-level retries default to 0 and the timeout to 30 s
+(`TRIAD_MODEL_MAX_RETRIES`, `TRIAD_MODEL_TIMEOUT_S`). Two abstains by one agent end the run on
+the solver with `AGENT_ABSTAINED` or `AGENT_ERROR`.
 
 Every state change is one entry in a SHA-256 hash-chained JSONL ledger: scenario, options
 each party saw, each message with the model id / prompt hash / tokens / latency behind it,
@@ -77,6 +96,7 @@ recompute the chain; `triad audit` rebuilds a Markdown report from the file alon
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 cp .env.example .env            # add ANTHROPIC_API_KEY for live agents; stubs need none
+                                # model id: TRIAD_MODEL (AGENT_MODEL also read)
 ```
 
 Place the datasets in `data/` (not committed):
@@ -109,8 +129,9 @@ Demo seeds are `29, 7, 101`; evaluation seeds start at 1000 and never overlap th
 Stub policies: `greedy` (counters with its cheapest option until the table is within
 tolerance), `yielding` (concedes progressively), `agreeable` (accepts anything legal),
 `stubborn` (never accepts), `reckless` (counters with infeasible proposals), `flaky`
-(fails the schema once), `broken` (always errors). They exist to exercise every path of the
-judge without a model, and to give the model arms something to be compared against.
+(fails the schema once), `broken` (never produces a valid message), `crashing` (raises, like a
+provider timeout). They exist to exercise every path of the judge without a model, and to give
+the model arms something to be compared against.
 
 ## Dashboard and API
 
@@ -196,7 +217,7 @@ triad/
   api.py        FastAPI service: runs, SSE stream, options, human decision, audit
   static/       dashboard
   cli.py        triad scenario | solve | negotiate | verify | audit | eval | serve
-tests/          118 tests: checkers, solver, ledger tamper, judge paths, agents with a fake
+tests/          120 tests: checkers, solver, ledger tamper, judge paths, agents with a fake
                 client, eval harness, audit and API end to end
 ```
 

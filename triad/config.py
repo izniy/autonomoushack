@@ -17,12 +17,12 @@ AIRPORTS_CSV = DATA_DIR / "airports.csv"
 AIRLINES_CSV = DATA_DIR / "airlines.csv"
 RUNS_DIR = ROOT / "runs"
 
-MODEL = os.getenv("TRIAD_MODEL", "claude-sonnet-5")
+MODEL = os.getenv("TRIAD_MODEL") or os.getenv("AGENT_MODEL") or "claude-sonnet-5"
 EVAL_MODEL = os.getenv("TRIAD_EVAL_MODEL", "claude-haiku-4-5-20251001")
 
 # Model call limits. A call that times out abstains for that round and the judge carries on.
-MODEL_TIMEOUT_S = float(os.getenv("TRIAD_MODEL_TIMEOUT_S", "60"))
-MODEL_MAX_RETRIES = int(os.getenv("TRIAD_MODEL_MAX_RETRIES", "2"))
+MODEL_TIMEOUT_S = float(os.getenv("TRIAD_MODEL_TIMEOUT_S", "30"))
+MODEL_MAX_RETRIES = int(os.getenv("TRIAD_MODEL_MAX_RETRIES", "0"))  # SDK-level; a failure abstains
 
 # List prices per million tokens (input, output) used to report $/scenario. Override with
 # TRIAD_PRICE_<MODEL>=in,out ; unknown models fall back to the Sonnet rate and are flagged.

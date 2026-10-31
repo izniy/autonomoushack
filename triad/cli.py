@@ -28,7 +28,7 @@ def main(argv: list[str] | None = None) -> None:
     ng = sub.add_parser("negotiate", help="run the three-party negotiation on a scenario")
     _add_scenario_args(ng)
     ng.add_argument("--stub", nargs="?", const="greedy", metavar="POLICY",
-                    help="use deterministic stub agents (greedy|yielding|agreeable|stubborn|reckless|broken|flaky)")
+                    help="use deterministic stub agents (greedy|yielding|agreeable|stubborn|reckless|flaky|broken|crashing)")
     ng.add_argument("--ledger", help="write the hash-chained ledger to this JSONL path")
     ng.add_argument("--model", help="model id for the live agents (default TRIAD_MODEL)")
     ng.add_argument("--json", action="store_true", help="print the outcome as JSON")

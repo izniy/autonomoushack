@@ -32,7 +32,8 @@ class Agent(Protocol):
 
 
 def ask(agent: Agent, view: AgentView) -> Reply:
-    """One schema retry, then abstain. API errors abstain too, with the traceback kept."""
+    """One schema retry, then abstain. A provider error (timeout, API failure) abstains at once:
+    no repair call is spent on it, and the traceback is kept."""
     raw: dict = {}
     err = None
     for attempt in range(1 + config.SCHEMA_RETRIES):
@@ -51,6 +52,7 @@ def ask(agent: Agent, view: AgentView) -> Reply:
             raw[f"attempt_{attempt}_error"] = err
             raw["traceback"] = traceback.format_exc()[-800:]
             _telemetry(agent, raw, attempt)
+            break
     return Reply(None, err or "no response", raw)
 
 

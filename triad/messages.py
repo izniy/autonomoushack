@@ -61,7 +61,8 @@ class PriorMessage(BaseModel):
     agent: Party3
     decision: Decision
     proposal_key: str | None
-    rationale: str
+    cited_rules: list[str] = []   # rule ids a REJECT named (structured, judge-checked)
+    rationale: str                # free text; shown only to its own author's later rounds
     outcome: str   # how the orchestrator treated it: ACCEPT_OK, COUNTER_OK, INFEASIBLE_COUNTER, ...
     detail: str = ""   # orchestrator's reason, e.g. the rules an infeasible counter failed
 

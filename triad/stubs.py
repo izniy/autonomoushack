@@ -26,6 +26,7 @@ class StubAgent:
                 from round 2, since own cost cannot rise).
     reckless    ACCEPT everything, even what fails my own rules (trips SELF_VIOLATION).
     broken      returns prose instead of JSON (trips ABSTAIN after the retry).
+    crashing    raises, like a provider timeout (abstains at once, no retry).
     flaky       invalid on the first attempt, valid on the retry.
     """
 
@@ -46,6 +47,8 @@ class StubAgent:
         fails = [v.rule_id for v in cur.verdicts if not v.ok]
         base = {"agent": self.party, "confidence": 0.9}
 
+        if self.policy == "crashing":
+            raise TimeoutError("simulated provider timeout")
         if self.policy == "broken":
             return "I think we should just land as soon as possible, thanks."
         if self.policy == "flaky" and error is None:
