@@ -16,6 +16,8 @@ manager approves or overrides the result; the system never executes anything.
 **Design principle: agents reason, concede and explain; code decides what is legal, what it
 costs, who wins a round, when consensus exists and when to fall back.**
 
+![A live negotiation on AA1495, LAX to Las Vegas, 310 minutes late. The three agents agree in round 2 on the best possible plan, 481 cheaper than first come, first served.](docs/screenshots/negotiation.png)
+
 ## What sets it apart
 
 Most multi-agent demos let the model decide the outcome. TRIAD does not.
@@ -214,35 +216,63 @@ the model arms something to be compared against.
 
 ## Dashboard and API
 
-`triad serve` starts FastAPI with the single-page console. `POST /api/runs` starts a
-negotiation in a worker thread; `GET /api/runs/{id}/events` streams every ledger entry over
-SSE as it is written, so the three agent columns fill in live with the judge's ruling under
-each message. When the run ends the duty manager sees the decision, its source and fallback
-code, system cost against FIFO and optimum, each party's utility, and can **Approve** or
-**Override** to any *legal* option (an override that fails a hard rule is refused with the
-failing rules) or hand off with the diversion assessment. The human step is appended to the
-same chain as `HUMAN_DECISION`, actor `USER`. Only one human decision is accepted per run, even
-under simultaneous clicks. The API has no authentication, so `actor` is whatever the client sent;
-the entry records `actor_authenticated: false` and should be read that way. `/api/runs/{id}/audit.md|.json|verify`
-download the trail; `/api/eval` shows the latest batch summary on the Evaluation tab.
+`triad serve` starts FastAPI with the single-page console at http://127.0.0.1:8000. It has
+three views.
+
+**Set up.** Pick one of the demo flights (seeds `7`, `29`, `101`), each tagged with the party
+whose rules block the most options, or type any seed. *Normal agents* runs the live model
+agents. *Stress test* runs scripted agents instead (below).
+
+![Set up: three real delayed flights, the three agents and the hard rules each one owns](docs/screenshots/setup.png)
+
+**Negotiation.** `POST /api/runs` starts a negotiation in a worker thread and
+`GET /api/runs/{id}/events` streams every ledger entry over SSE as it is written, so the page
+fills in round by round. It shows the flight with its provenance tags, how each agent's utility
+moved as the plan on the table changed, each agent's private numbers, and every move with the
+judge's ruling under it. A counter that breaks another party's rule is shown as rejected by
+code, with the rule ids (hover for the measured value and the limit). The agent's own
+reasoning and concessions open on click.
+
+![Each agent's private numbers, then every move in every round with the judge's ruling. Code rejects the Pilot's 16:45 counter because that slot is full, a fact only ATC can see.](docs/screenshots/negotiation-rounds.png)
+
+When the run ends, the duty manager compares the result with first come, first served and the
+optimum, then **Approves** it or chooses another plan from the *legal* options only. The API
+refuses an override that fails a hard rule and names the failing rules. When nothing can land,
+the choice is to record a diversion. The human step is appended to the same chain as
+`HUMAN_DECISION`, actor `USER`. Only one human decision is accepted per run, even under
+simultaneous clicks. The API has no authentication, so `actor` is whatever the client sent;
+the entry records `actor_authenticated: false` and should be read that way.
+`/api/runs/{id}/audit.md|.json|verify` download the trail.
+
+**Results.** Shows the latest `triad eval` summary from `/api/eval`. It can also run its own
+batch from the browser over the evaluation seeds, with the live agents plus never-agrees,
+accepts-anything and crashing scripted teams, to fill in the flight-by-flight view (see
+Evaluation).
+
+**Stress tests** sit on the Set up view and under *Your call*. They map onto the scripted
+policies: *Breaks rules* is `greedy`, *Never agrees* is `stubborn`, *Crashes* is `crashing`, and
+*Low fuel* runs seed `1021` (UA1768), a real flight on which no landing option is legal.
 
 ### What to look at in a demo
 
-1. `triad serve`, seed `29`, agents `yielding`. The scenario card shows which fields are
-   `real`, `derived` or `synthetic`; the decision space shows 177 proposals, 14 legal landings,
-   8 mutually acceptable.
-2. Round 1: PILOT and GROUND counter with their own cheapest option; both are
-   `INFEASIBLE_COUNTER` because they fail *another* party's rule, and the failing rule ids are
-   named. Nothing illegal ever reaches the table.
-3. Round 2: GROUND's conceding counter is legal and cheaper for the system; it wins the round.
-   Round 3 is a vote; three `ACCEPT_OK` give `CONSENSUS`.
-4. Decision: cost against FIFO and optimum, each party's utility, the model calls behind it.
-   Approve, or override to a legal option — try an illegal one and watch it refused with the
-   rule that fails.
-5. **Verify chain**, then open `audit.md`: the whole story is rebuilt from the ledger file alone.
-6. Same seed with `stubborn` (solver fallback, `NO_CONSENSUS_ROUND_CAP`) and `crashing`
-   (provider error → abstain → `AGENT_ERROR`): the system degrades to a flagged deterministic
-   answer, never to silence.
+1. **Set up**: AA1495 (seed `7`), *Normal agents*, *Start negotiation*. The ticket tags the
+   synthetic fields, and Las Vegas is taking 6 arrivals per 15 minutes instead of 9.
+2. **Round 1**: in the run pictured, the Pilot counters with the 16:45 slot, which it cannot
+   know is full. Code rejects it with `ATC-SLOT-CAP` and `ATC-SEP-WAKE` (hover the tags). ATC's
+   slow-down counter is legal and the cheapest, so code puts it on the table. Model output
+   varies from run to run, and the rulings show whatever happened.
+3. **Round 2**: three `ACCEPT_OK` give `CONSENSUS`. The chart shows ATC and Pilot utility
+   rising from 0.80 and 0.72 to 1.
+4. **Your call**: 10,204 against 10,685 for first come, first served, with the solver's optimum
+   also at 10,204. Approve, or choose another legal plan. *Against the brief* shows the ledger
+   verified against its head anchor.
+5. **Stress test**: *Never agrees* ends on the solver with `NO_CONSENSUS_ROUND_CAP`, and
+   *Crashes* with `AGENT_ERROR`. The system degrades to a flagged deterministic answer, never to
+   silence. *Low fuel* has no legal landing, so the outcome is `UNRESOLVED` and the duty
+   manager gets a diversion assessment.
+6. **Results**: the batch view, flight by flight.
+
+![Low fuel: UA1768 has no legal landing option, so nothing is negotiated and the duty manager gets a diversion assessment](docs/screenshots/no-legal-landing.png)
 
 ## Evaluation
 
@@ -252,6 +282,15 @@ consensus rate (overall and given an option exists that clears every party's thr
 fallback codes, counters attempted vs infeasible counters caught, whether the final decision
 passes all checkers (must be 1.00), gap to the optimum, saving vs FIFO, per-party minimum
 utility, rounds, wall time, model calls, tokens and an estimated USD per run.
+
+The dashboard's Results view shows the same measures. The live arm from 31 October ran ten
+unseen flights (seeds 1000 to 1009) with Claude Opus 5.5 as all three agents. The agents
+reached the best plan on 9 of 10, but first come, first served was already best on 5 of
+those, so the real test is the other 5. There the agents captured the full saving on 4 and
+settled for first come, first served on UA607. The safety row is the scripted teams on the
+same flights.
+
+![Results: the live arm on ten unseen flights, flight by flight, against first come, first served and the solver, with the scripted teams below](docs/screenshots/results.png)
 
 Stub arms over 30 seeds (`runs/eval/stubs-30`, reproducible with `triad eval --tag stubs-30`):
 
