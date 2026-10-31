@@ -1,11 +1,16 @@
 # TRIAD — Cross-organisational disruption negotiation (Airbus Challenge #2)
 
-> ATC ⇄ Pilot/AOC ⇄ Ground agents negotiate a *revised arrival slot + pilot action + gate + turnaround*
+> ATC ⇄ Pilot/AOC ⇄ Ground agents negotiate a *revised arrival slot + pilot action + gate + crew plan*
 > for a real 2015 US DOT flight, in ≤ 3 rounds around an orchestrator-owned proposal. Every proposal is
 > checked by each party's deterministic rules engine, every step lands in a hash-chained consensus ledger,
 > and a non-AI solver is the fallback. The OCC duty manager approves — the system never executes.
 
 **Design principle: agents reason, concede and explain; code decides what is legal, what it costs, and who wins a round.**
+
+> **Status (31 Oct 2026):** every phase below is built; see [README.md](README.md) for the architecture as
+> implemented, the CLI, the dashboard and the evaluation numbers. Deviations from the plan are marked
+> *as built* inline. Live-model arms require `ANTHROPIC_API_KEY`; without it the agents abstain and the
+> solver decides with `fallback_code = AGENT_ERROR`, which is recorded, not hidden.
 
 ## 0. Rubric mapping
 
@@ -36,16 +41,18 @@ Stretch: LLM parses a free-text ATIS/NOTAM-style disruption note into the struct
 
 ## 2. Decision space (small, enumerable)
 
-`Proposal = {arrival_slot, pilot_action, gate, turnaround_min}`
+`Proposal = {slot_id, pilot_action, gate, crew_plan}` *(as built: `turnaround_min` was replaced by `crew_plan`,
+since the turnaround minimum is a hard rule, not a choice, while keeping or swapping the crew is)*
 
 | Field | Options | Owner |
 |---|---|---|
-| `arrival_slot` | next K=12 five-minute slots ≥ earliest ETA; capacity enforced per rolling 15-min bin (AAR) | ATC |
-| `pilot_action` | `CONTINUE`, `HOLD(n)`, `REDUCE_SPEED(n)`, `DIVERT(alt)` — n implied by slot−ETA | Pilot |
+| `slot_id` | next K five-minute slots ≥ earliest ETA; capacity enforced per rolling 15-min bin (AAR) | ATC |
+| `pilot_action` | `SPEED_UP`, `CONTINUE`, `REDUCE_SPEED`, `HOLD`, `DIVERT` — minutes implied by slot−ETA | Pilot |
 | `gate` | gate map entries (size category, occupancy windows) or `REMOTE_STAND` | Ground |
-| `turnaround_min` | ≥ type minimum; drives next-leg departure | Ground/Pilot |
+| `crew_plan` | `SAME_CREW` or `RESERVE_CREW` (reserve crew, costed) — drives the FDP check | Ground |
 
-A few hundred combinations → exhaustive loop in ms. (`runway` is a cut-list field; add only if time.)
+≤ 200 combinations → exhaustive loop in ms. `DIVERT` is enumerated and costed but never negotiated: when no
+landing option is legal the outcome is `UNRESOLVED` with a diversion assessment for the duty manager.
 
 ## 3. Parties, private state, checkers, costs
 
@@ -62,24 +69,28 @@ Public rules (orchestrator): schema, slot/gate exist, proposal references, round
 ## 4. Protocol — orchestrator-owned proposal, ≤ 3 rounds, enforced in code
 
 ```
-Round 0 (no LLM)
+Round 0 (no model call)
   build Scenario → enumerate proposals → query the 3 checkers → FEASIBLE SET
   current = FIFO seed (next slot by ETA order, HOLD, original/next free gate, min turnaround)
   (FIFO is also the status-quo baseline; it is chosen so that it violates at least one party's preference)
-Rounds 1–3 (3 LLM calls in parallel per round)
+Rounds 1–3 (3 model calls in parallel per round; round 3 is a vote — counters there are LATE_COUNTER, ignored)
   each agent gets: public ledger, current proposal, its own private state, its own checker/cost tools
   each agent returns ONE message: ACCEPT | COUNTER(proposal) | REJECT(rule_ids)
   orchestrator:
     schema invalid → 1 retry → ABSTAIN (logged; never counts as ACCEPT; 2 abstains by one agent → fallback)
     ACCEPT on a proposal that fails the accepter's OWN hard rules → refused, logged SELF_VIOLATION
+    REJECT citing rules the proposal passes → logged UNFOUNDED_REJECT (counts as a plain non-accept)
     COUNTER → run all 3 checkers; infeasible → logged INFEASIBLE_COUNTER and discarded
     COUNTER must be a concession: agent's own cost(new) ≥ own cost(previous counter) else logged NON_CONCESSION, discarded
     all three ACCEPT (explicitly) → CONSENSUS
     else current = feasible counter with lowest total cost (tie → earliest slot); next round
-After round 3 without consensus, or any API error/timeout → FALLBACK_SOLVER
+After round 3 without consensus, or any API error/timeout → FALLBACK_SOLVER with a fallback_code:
+  NO_CONSENSUS_ROUND_CAP | NO_ACCEPTABLE_OPTION | AGENT_ABSTAINED | AGENT_ERROR | NO_FEASIBLE_LANDING
 ```
 
-Properties: deterministic given agent outputs, cannot loop, every state change has one logged reason, the round winner is chosen by code not persuasion, safety margins can never be negotiated away. Agents are told the cap exists. ≤ 9 LLM calls per scenario.
+Properties: deterministic given agent outputs, cannot loop, every state change has one logged reason, the round winner is chosen by code not persuasion, safety margins can never be negotiated away. Agents are told the cap exists. ≤ 9 model calls per scenario (plus at most one retry each).
+
+*As built:* each party also gets a normalised utility over the feasible set (1 = its cheapest legal option, 0 = its most expensive); an option is "mutually acceptable" when every party's utility clears `ACCEPTANCE_THRESHOLD = 0.35`. The judge prefers mutually acceptable counters when choosing what goes on the table, and the eval reports consensus rate conditional on such an option existing, so vacuous consensus on the FIFO seed is visible.
 
 ## 5. Fallback solver & baselines (no AI)
 
@@ -91,7 +102,7 @@ Properties: deterministic given agent outputs, cannot loop, every state change h
 
 ```json
 {"scenario_id":"WN1234-2015-06-12","round":2,"agent":"PILOT","decision":"COUNTER",
- "proposal":{"arrival_slot":"14:45","pilot_action":"REDUCE_SPEED","gate":"B12","turnaround_min":40},
+ "proposal":{"slot_id":"S03","pilot_action":"REDUCE_SPEED","gate":"B12","crew_plan":"SAME_CREW"},
  "constraint_results":[{"rule":"PLT-FUEL-RES","ok":true,"measured":3120,"limit":2700,"margin":420}],
  "my_cost":38.5,"concessions":["accepted later slot than preferred"],
  "rationale":"Reducing speed instead of holding saves ~180 kg and keeps 14 connecting pax.","confidence":0.8}
@@ -99,30 +110,28 @@ Properties: deterministic given agent outputs, cannot loop, every state change h
 
 ## 7. Ledger
 
-`ledger.jsonl`, append-only. Entry `{seq, ts, prev_hash, hash, scenario_id, round, actor, type, payload, verdicts[], decision_source, model, prompt_sha256, usage}`; `hash = sha256(prev_hash + canonical_json)`. `verify_ledger()` recomputes. UI timeline + "download audit" (JSON + Markdown).
+`<scenario>.ledger.jsonl`, append-only. Entry `{seq, ts, prev_hash, hash, scenario_id, round, actor, type, payload}`; `hash = sha256(prev_hash + canonical_json)`. Model id, prompt version, prompt hash, output mode, latency and token usage ride in each `MESSAGE` payload as `attempt_<n>_call`. `triad verify` and `/api/runs/{id}/verify` recompute the chain; `triad audit` and `/audit.md|.json` rebuild the report from the file alone. The human decision is appended to the same chain as `HUMAN_DECISION`.
 
 ## 8. Build order (minimum submittable at ~3 h)
 
-Stack: Python 3.13 (`.venv` exists), DuckDB over `flights.parquet`, Pydantic v2, `anthropic` SDK (load `claude-api` skill first; Sonnet 5 live demo, Haiku 4.5 batch), FastAPI + SSE + single HTML page (Streamlit if solo and squeezed), pytest.
+Stack: Python 3.13, DuckDB over `flights.parquet`, Pydantic v2, `anthropic` SDK (structured outputs, Sonnet 5 live demo, Haiku 4.5 batch), FastAPI + SSE + single HTML page, pytest.
 
 ```
-triad/ data.py scenario.py rules.py checkers.py costs.py solver.py messages.py
-       agents.py protocol.py ledger.py eval.py api.py static/index.html
-tests/ checker rejections · solver optimality on toy · ledger tamper · protocol cap/abstain/non-concession with stub agents
+triad/ data.py scenario.py rules.py checkers.py costs.py solver.py messages.py views.py
+       judge.py protocol.py agents.py stubs.py ledger.py audit.py eval.py api.py cli.py static/index.html
+tests/ checkers · solver · ledger tamper · judge paths with stub agents · agents with a fake client · eval · audit + API
 ```
 
-| Phase | Deliverable | Time |
+| Phase | Deliverable | Status |
 |---|---|---|
-| P0 | `data.py` + parquet + `scenario.py`; CLI prints a scenario with provenance labels | 0:45 |
-| P1 | rules/checkers/costs/solver + FIFO; unit tests | 1:45 |
-| P2 | messages/ledger/protocol with **stub agents** (random feasible counters) → full run, no LLM. Then real agents. **Submit v1.** | 3:00 |
-| P3 | API + dashboard: scenario card w/ badges, 3 agent columns per round, live rule panel, decision + source, Approve/Override, audit download | 4:30 |
-| P4 | `eval.py` 50–100 seeded scenarios × arms → `report.md` (metrics, failure cases, limits) | 5:30 |
-| P5 | README, deck, rehearsal, resubmit | 6:00 |
+| P0 | `data.py` + parquet + `scenario.py`; CLI prints a scenario with provenance labels | done |
+| P1 | rules/checkers/costs/solver + FIFO; unit tests | done |
+| P2 | messages/ledger/judge/protocol with **stub agents** (seven policies, including reckless/flaky/broken) → full run, no model; then live agents with structured output and a forced-tool fallback | done |
+| P3 | API + dashboard: scenario card w/ badges, 3 agent columns per round, live rule panel, decision + source, Approve/Override (legal options only), audit download | done |
+| P4 | `eval.py` seeded scenarios × arms → `summary.md` (metrics, failure codes, cost); stub arms run, model arms pending a key | done / pending key |
+| P5 | README, limits, rehearsal | README done |
 
-Cut list (in order): `runway`, NOTAM parsing, heat-map, `REMOTE_STAND`. Never cut: checkers, concession rule, fallback, ledger, eval.
-
-Team split if 4: core (P0–P1) · orchestrator+agents (P2) · data+eval (P4) · UI then deck.
+Cut: `runway`, NOTAM parsing, heat-map. Kept: `REMOTE_STAND`, checkers, concession rule, fallback, ledger, eval.
 
 ## 9. Evaluation & demo
 
@@ -136,6 +145,6 @@ Limits slide: synthetic fuel/gates/crew/pax, 2015 data, no live A-CDM integratio
 
 Judge Q "why not just run the solver?": the solver needs every party to answer feasibility for every candidate under one fixed weighting; negotiation lets each party keep its data and priority-setting local, the solver stays the safety net, and we measured the cost of that trade-off (the gap).
 
-## 10. Confirm before coding
-* `ANTHROPIC_API_KEY` available? (stub/fallback modes work without it)
-* Deadline and team size.
+## 10. Remaining before the pitch
+* Put `ANTHROPIC_API_KEY` in `.env`, run `triad negotiate --seed 29` live and `triad eval --arms yielding llm:claude-haiku-4-5-20251001 -n 20`, paste the model-arm row into the README table.
+* Rehearse the 3-minute script against `triad serve` with seeds 29, 7, 101.
