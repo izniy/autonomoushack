@@ -10,6 +10,27 @@ OCC duty manager approves or overrides the result; the system never executes any
 **Design principle: agents reason, concede and explain; code decides what is legal, what it
 costs, who wins a round, when consensus exists and when to fall back.**
 
+## Why this shape
+
+A late arrival is resolved today by phone calls between three organisations that do not share
+data: the ANSP knows the arrival rate and the separation picture, the operator knows the fuel
+and the connections, the airport knows the stands and the crew clock. Each one optimises
+locally and in sequence, and nobody can later show why the outcome was the one chosen.
+
+TRIAD keeps those three views private and puts a *shared procedure* between them instead of a
+shared database. Each party's agent sees only its own numbers and the structured decisions of
+the others; the proposal it is asked about is checked by all three rule sets before it is ever
+on the table; what it may not do is clear from the ruling it gets back. The things a safety
+case needs to trust — legality, cost, who won, when to stop — are never delegated to a model.
+The things a model is good at — weighing a trade-off, conceding on the right dimension,
+explaining it in the other organisation's terms — are what the model is asked to do, and every
+word of it is on the ledger for the duty manager.
+
+Why not just the solver? The solver needs every party's cost function, which in practice no
+party hands over. Here the solver is the *benchmark and the fallback*: it gives the honest
+optimum to measure the negotiation against, and it decides, flagged, when the agents cannot.
+If the live arm cannot beat FIFO the evaluation says so — that is the point of shipping it.
+
 ```
   DOT row  ──►  Scenario (real / derived / synthetic, labelled)
                    │
@@ -41,6 +62,32 @@ costs, who wins a round, when consensus exists and when to fall back.**
 | Why should my organisation accept, counter or reject; what am I conceding; a rationale | model (or a scripted stub) | `agents.py`, `stubs.py` |
 | Fallback when the model errs, stalls or the round cap is hit | code — same solver, flagged with a code | `judge.py` |
 | Final approval | human | `api.py`, dashboard |
+
+A proposal is `{slot, pilot_action, gate, crew_plan}` with `pilot_action ∈ SPEED_UP | CONTINUE |
+REDUCE_SPEED | HOLD | DIVERT` and `crew_plan ∈ SAME_CREW | RESERVE_CREW`. Every proposal is run
+through all eleven hard rules; each verdict records the measured value, the limit and the margin.
+
+| Rule | Owner | Constraint | Source |
+|---|---|---|---|
+| `ATC-SLOT-CAP` | ATC | arrivals in the 15-min bin ≤ effective AAR | FAA JO 7210.3 ch.10 |
+| `ATC-SEP-WAKE` | ATC | time-based wake separation fits inside the slot | ICAO Doc 4444 8.7.4; FAA JO 7110.65 5-5-4 |
+| `ATC-HOLD-MAX` | ATC | airborne holding ≤ facility limit | facility directive (synthetic SOP) |
+| `PLT-FUEL-RES` | Pilot | fuel after the action covers alternate + 45-min final reserve + contingency | 14 CFR 91.167(a); ICAO Annex 6 I 4.3.6 |
+| `PLT-DIVERT-FUEL` | Pilot | fuel to the alternate with final reserve intact | 14 CFR 91.167(a)(2)-(3) |
+| `PLT-TURB-HOLD` | Pilot | holding ≤ 10 min with moderate turbulence in the hold | operator FOM (synthetic SOP) |
+| `GND-GATE-SIZE` | Ground | gate code accommodates the aircraft | ICAO Annex 14 reference code |
+| `GND-GATE-FREE` | Ground | gate free for the whole stay plus buffer | stand allocation procedure (synthetic SOP) |
+| `GND-CREW-DUTY` | Ground | next leg departs before the crew duty limit | 14 CFR Part 117 Table B |
+| `GND-TURN-MIN` | Ground | turnaround ≥ type minimum | operator GOM (synthetic SOP) |
+| `PUB-SCHEMA` | public | message matches the schema and references existing slots and gates | protocol |
+
+Each party also has a cost function with public weights (ATC: bin pressure, holding workload,
+speed-change and divert coordination; Pilot: fuel, arrival delay, missed connections,
+turbulence exposure, diversion; Ground: gate change and release, remote bus, reserve-crew
+call-out, crew overtime, next-leg delay or cancellation). A party's **utility** for a legal option is normalised over the
+feasible set — 1 is its cheapest legal option, 0 its dearest — and an option is **mutually
+acceptable** when every party's utility is at least `ACCEPTANCE_THRESHOLD` (0.35). That set is
+what the live arm is measured on: consensus only counts for something when such an option exists.
 
 A model reply is a structured message (`ACCEPT | COUNTER(proposal) | REJECT(rule_ids)` plus
 concessions, rationale, confidence). The judge then checks it:
@@ -153,6 +200,24 @@ same chain as `HUMAN_DECISION`, actor `USER`. Only one human decision is accepte
 under simultaneous clicks. The API has no authentication, so `actor` is whatever the client sent;
 the entry records `actor_authenticated: false` and should be read that way. `/api/runs/{id}/audit.md|.json|verify`
 download the trail; `/api/eval` shows the latest batch summary on the Evaluation tab.
+
+### What to look at in a demo
+
+1. `triad serve`, seed `29`, agents `yielding`. The scenario card shows which fields are
+   `real`, `derived` or `synthetic`; the decision space shows 177 proposals, 14 legal landings,
+   8 mutually acceptable.
+2. Round 1: PILOT and GROUND counter with their own cheapest option; both are
+   `INFEASIBLE_COUNTER` because they fail *another* party's rule, and the failing rule ids are
+   named. Nothing illegal ever reaches the table.
+3. Round 2: GROUND's conceding counter is legal and cheaper for the system; it wins the round.
+   Round 3 is a vote; three `ACCEPT_OK` give `CONSENSUS`.
+4. Decision: cost against FIFO and optimum, each party's utility, the model calls behind it.
+   Approve, or override to a legal option — try an illegal one and watch it refused with the
+   rule that fails.
+5. **Verify chain**, then open `audit.md`: the whole story is rebuilt from the ledger file alone.
+6. Same seed with `stubborn` (solver fallback, `NO_CONSENSUS_ROUND_CAP`) and `crashing`
+   (provider error → abstain → `AGENT_ERROR`): the system degrades to a flagged deterministic
+   answer, never to silence.
 
 ## Evaluation
 
