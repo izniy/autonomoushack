@@ -2,383 +2,974 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Triad — disruption negotiation</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TRIAD</title>
 <style>
+@font-face{font-family:"Host Grotesk";src:url(/static/fonts/host-grotesk-latin-300-normal.woff2) format("woff2");font-weight:300;font-display:swap}
+@font-face{font-family:"Host Grotesk";src:url(/static/fonts/host-grotesk-latin-400-normal.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Host Grotesk";src:url(/static/fonts/host-grotesk-latin-500-normal.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Host Grotesk";src:url(/static/fonts/host-grotesk-latin-600-normal.woff2) format("woff2");font-weight:600;font-display:swap}
+
 :root{
-  --bg:#f3f5f8; --panel:#ffffff; --panel2:#eaeef4; --line:#d4dbe5; --ink:#17212b; --ink2:#55657a; --ink3:#8291a6;
-  --accent:#c77800; --accent-ink:#8a5200;
-  --ok:#1e8e5a; --ok-bg:#e3f5ec; --bad:#c23b3b; --bad-bg:#fbe7e7; --warn:#b8860b; --warn-bg:#fff4d6;
-  --atc:#0d7c86; --pilot:#4b56c8; --ground:#9a6700;
-  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
-  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
-  color-scheme:light dark;
+  --black:#000;--tile:#060606;--tile-2:#0E0E0E;--line:#262626;--glow:#D9B36C;
+  --t1:#F2F2F2;--t2:#A1A1A1;--t3:#636363;
+  --atc:#4DA3FF;--pilot:#C77DFF;--ground:#FFB340;--green:#30D158;--red:#FF453A;
+  --font:"Host Grotesk",-apple-system,"Helvetica Neue",sans-serif;
 }
-@media (prefers-color-scheme:dark){:root{
-  --bg:#0f141a; --panel:#171e27; --panel2:#1f2833; --line:#2c3845; --ink:#e6ebf2; --ink2:#a4b1c2; --ink3:#6f7d90;
-  --accent:#f0a030; --accent-ink:#f5b85a;
-  --ok:#3fbf7f; --ok-bg:#153324; --bad:#f06a6a; --bad-bg:#3a1d1d; --warn:#e0b040; --warn-bg:#3a3010;
-  --atc:#3fc1cc; --pilot:#8d95ff; --ground:#e0b040;
-}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 var(--sans)}
-h1,h2,h3{margin:0;font-weight:600;text-wrap:balance}
-h1{font-size:16px;letter-spacing:.01em}
-h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink2)}
-h3{font-size:14px}
-code,.mono{font-family:var(--mono);font-size:12.5px}
-button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:6px;padding:6px 12px}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-button:disabled{opacity:.5;cursor:default}
-button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-input,select,textarea{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
-input[type=number]{width:84px}
-header{display:flex;gap:16px;align-items:center;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:5;flex-wrap:wrap}
-header .brand{display:flex;flex-direction:column;margin-right:8px}
-header .brand small{color:var(--ink3);font-size:11.5px}
-header form{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-header label{display:flex;flex-direction:column;font-size:11px;color:var(--ink3);gap:2px;text-transform:uppercase;letter-spacing:.06em}
-.status{margin-left:auto;display:flex;gap:10px;align-items:center;color:var(--ink2);font-size:12.5px}
-.dot{width:9px;height:9px;border-radius:50%;background:var(--ink3);display:inline-block}
-.dot.live{background:var(--ok);animation:pulse 1.2s infinite}
-.dot.err{background:var(--bad)}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
-@media (prefers-reduced-motion:reduce){.dot.live{animation:none}}
-main{display:grid;grid-template-columns:340px 1fr;gap:16px;padding:16px 20px;max-width:1700px;margin:0 auto}
-@media (max-width:1100px){main{grid-template-columns:1fr}}
-aside,section.flow{display:flex;flex-direction:column;gap:14px;min-width:0}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
-.card h2{margin-bottom:10px}
-.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;font-size:13px}
-.kv dt{color:var(--ink3)}
-.kv dd{margin:0}
-.badge{display:inline-block;font-size:10.5px;padding:1px 6px;border-radius:4px;border:1px solid var(--line);color:var(--ink2);vertical-align:middle;letter-spacing:.03em;text-transform:uppercase}
-.badge.real{color:var(--ok);border-color:var(--ok)}
-.badge.derived{color:var(--accent-ink);border-color:var(--accent)}
-.badge.synthetic{color:var(--ink3);border-style:dashed}
-.chip{display:inline-block;font-weight:600;font-size:11.5px;padding:2px 8px;border-radius:999px;background:var(--panel2);color:var(--ink2)}
-.chip.ok{background:var(--ok-bg);color:var(--ok)}
-.chip.bad{background:var(--bad-bg);color:var(--bad)}
-.chip.warn{background:var(--warn-bg);color:var(--warn)}
-.chip.ATC{color:var(--atc)} .chip.PILOT{color:var(--pilot)} .chip.GROUND{color:var(--ground)}
-.rules{display:flex;flex-direction:column;gap:6px}
-.rule{display:grid;grid-template-columns:14px 1fr;gap:8px;font-size:12.5px;align-items:start}
-.rule .m{width:10px;height:10px;border-radius:2px;margin-top:4px;background:var(--ok)}
-.rule.bad .m{background:var(--bad)}
-.rule .d{color:var(--ink3);font-size:11.5px}
-.round{border-left:3px solid var(--line);padding-left:14px}
-.round.final{border-left-color:var(--accent)}
-.round-head{display:flex;gap:12px;align-items:baseline;margin-bottom:8px;flex-wrap:wrap}
-.round-head .on{color:var(--ink2);font-size:12.5px}
-.cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-@media (max-width:800px){.cols{grid-template-columns:1fr}}
-.agent{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--panel);display:flex;flex-direction:column;gap:6px;min-height:118px;border-top-width:3px}
-.agent.ATC{border-top-color:var(--atc)} .agent.PILOT{border-top-color:var(--pilot)} .agent.GROUND{border-top-color:var(--ground)}
-.agent .who{display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:12.5px}
-.agent .who small{color:var(--ink3);font-weight:400}
-.agent .msg{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.agent .rat{color:var(--ink2);font-size:12.5px}
-.agent .ruling{font-size:12px;border-top:1px dashed var(--line);padding-top:6px;color:var(--ink2)}
-.agent .ruling b{color:var(--ink)}
-.agent .pending{color:var(--ink3);font-style:italic}
-.round-foot{margin-top:8px;font-size:12.5px;color:var(--ink2)}
-.bars{display:grid;grid-template-columns:70px 1fr 54px;gap:4px 10px;align-items:center;font-size:12.5px}
-.bar{height:10px;background:var(--panel2);border-radius:3px;overflow:hidden}
-.bar i{display:block;height:100%;background:var(--accent)}
-.bar.ATC i{background:var(--atc)} .bar.PILOT i{background:var(--pilot)} .bar.GROUND i{background:var(--ground)}
-.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
-.decision{border:2px solid var(--accent);background:var(--panel)}
-.decision .src{font-size:18px;font-weight:600}
-.decision .fb{color:var(--warn)}
-.human{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
-.human textarea{flex:1 1 220px;min-height:34px}
-.ledger{max-height:280px;overflow:auto;font-size:11.5px}
-table{border-collapse:collapse;width:100%}
-th,td{text-align:left;padding:3px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-th{color:var(--ink3);font-weight:500;font-size:11px;text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0;background:var(--panel)}
-td.num,th.num{text-align:right}
-.scroll{overflow-x:auto}
-.muted{color:var(--ink3)}
-.err{color:var(--bad)}
-details summary{cursor:pointer;color:var(--ink2);font-size:12.5px}
-.tabs{display:flex;gap:4px}
-.tabs button[aria-selected=true]{background:var(--panel2);font-weight:600}
+html,body{margin:0}
+body{background:var(--black);color:var(--t1);font:400 15px/1.5 var(--font);letter-spacing:-.005em;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+button,select,input{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--glow);outline-offset:3px}
+h1,h2,h3,h4{margin:0;font-weight:400}
 [hidden]{display:none!important}
+
+/* glass capsule nav */
+.capsule{position:sticky;top:16px;z-index:10;margin:16px auto 0;width:max-content;max-width:calc(100% - 32px);display:flex;align-items:center;gap:4px;padding:5px;border-radius:14px;background:rgba(30,30,30,.72);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(255,255,255,.08)}
+.capsule button{border:0;background:transparent;padding:7px 16px;border-radius:9px;font-size:14px;color:var(--t2);cursor:pointer}
+.capsule button[aria-current="page"]{background:rgba(255,255,255,.1);color:var(--t1)}
+.capsule .mark{padding:0 16px 0 12px;font-size:16px;color:var(--t1);letter-spacing:-.01em}
+.capsule .mark sup{font-size:9px;color:var(--t3)}
+.capsule .state{padding:0 12px 0 16px;font-size:13px;color:var(--t2);display:flex;align-items:center;gap:8px;border-left:1px solid rgba(255,255,255,.08);white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+.dot.busy{background:var(--glow);box-shadow:0 0 8px var(--glow);animation:pulse 1.2s ease-in-out infinite}
+.dot.err{background:var(--red);box-shadow:0 0 8px var(--red)}
+@keyframes pulse{50%{opacity:.35}}
+
+/* seamed grid with warm glow at the crossings */
+.seams{display:grid;gap:1px;background:
+  radial-gradient(150px 150px at var(--gx1,25%) var(--gy1,0%),rgba(233,196,122,1),rgba(217,179,108,.35) 35%,transparent 70%),
+  radial-gradient(170px 170px at var(--gx2,75%) var(--gy2,40%),rgba(233,196,122,1),rgba(217,179,108,.35) 35%,transparent 70%),
+  radial-gradient(150px 150px at var(--gx3,40%) var(--gy3,85%),rgba(233,196,122,1),rgba(217,179,108,.35) 35%,transparent 70%),
+  var(--line);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.seams>*{background:var(--tile)}
+.side{writing-mode:vertical-rl;transform:rotate(180deg);display:flex;align-items:center;justify-content:flex-end;padding:22px 0;font-size:30px;font-weight:300;letter-spacing:-.02em;color:var(--t3);white-space:nowrap}
+.side.lit{color:var(--t1)}
+
+.pill{text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;border-radius:999px;padding:10px 20px;font-size:15px;border:1px solid rgba(255,255,255,.28);background:transparent;cursor:pointer;color:var(--t1)}
+.pill.solid{background:var(--t1);color:#000;border-color:var(--t1)}
+.pill.small{padding:6px 13px;font-size:13px}
+.pill[aria-pressed="true"]{background:rgba(255,255,255,.14);border-color:var(--t1)}
+.pill:disabled{opacity:.4;cursor:default}
+
+.tag{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--t2);border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:2px 10px}
+.tag.atc{color:var(--atc);border-color:rgba(77,163,255,.4)}.tag.pilot{color:var(--pilot);border-color:rgba(199,125,255,.4)}.tag.ground{color:var(--ground);border-color:rgba(255,179,64,.4)}
+.syn{font-size:11px;color:var(--ground);border:1px solid rgba(255,179,64,.35);border-radius:999px;padding:0 6px;margin-left:6px;vertical-align:3px}
+.okc,.noc,.warnc{width:20px;height:20px;border-radius:50%;display:inline-grid;place-items:center;flex:none}
+.okc{background:var(--green)}.noc{background:var(--red)}.warnc{background:var(--glow)}
+
+/* disclosure */
+.tip{position:relative;cursor:help}
+.tip .bubble{display:none;position:absolute;z-index:30;left:50%;bottom:calc(100% + 10px);transform:translateX(calc(-50% + var(--dx,0px)));width:max-content;max-width:280px;background:rgba(38,38,38,.96);border:1px solid rgba(255,255,255,.1);color:var(--t1);font:400 12.5px/1.45 var(--font);padding:9px 12px;border-radius:10px;opacity:0;pointer-events:none;transition:opacity .12s;text-align:left;white-space:normal;writing-mode:horizontal-tb}
+.tip:hover>.bubble,.tip:focus-visible>.bubble{display:block;opacity:1}
+.tip .bubble b{font-weight:500}
+.info{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;border:1px solid var(--t3);color:var(--t2);font-size:10.5px;flex:none}
+details.more summary{list-style:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-size:13.5px;color:var(--t2)}
+details.more summary::-webkit-details-marker{display:none}
+details.more summary::before{content:"+";display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;border:1px solid var(--t3);font-size:13px;line-height:1}
+details.more[open] summary::before{content:"−"}
+details.more .body{padding-top:12px;font-size:14.5px;line-height:1.6;color:var(--t1)}
+details.more .body small{display:block;margin-top:8px;color:var(--t2);font-size:13px}
+.empty{padding:40px 30px;color:var(--t2);font-size:15px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.empty b{color:var(--t1);font-weight:400;font-size:22px;letter-spacing:-.02em;display:block;margin-bottom:2px}
+
+/* ------------------------------------------------------------------ set up */
+#v-setup .hero{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:40px;padding:90px 72px 80px;max-width:1440px;margin:0 auto}
+#v-setup .hero h1{font-size:76px;font-weight:300;letter-spacing:-.045em;line-height:1}
+#v-setup .hero h1:last-child{text-align:right}
+#v-setup .hero .mid{display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--t2);font-size:14px;text-align:center;max-width:220px}
+.orbit{width:84px;height:84px;position:relative}
+.orbit i{position:absolute;width:12px;height:12px;border-radius:50%;box-shadow:0 0 14px currentColor}
+.orbit .a{left:36px;top:0;background:var(--atc);color:var(--atc)}.orbit .p{left:2px;top:60px;background:var(--pilot);color:var(--pilot)}.orbit .g{right:2px;top:60px;background:var(--ground);color:var(--ground)}
+.orbit svg{position:absolute;inset:0}
+#v-setup .board{grid-template-columns:72px repeat(3,minmax(0,1fr));--gx1:5%;--gy1:0%;--gx2:67.8%;--gy2:52%;--gx3:36.4%;--gy3:100%}
+label.fl{display:block;cursor:pointer;position:relative;padding:24px 26px 22px;min-height:220px;background:var(--tile)}
+label.fl input{position:absolute;opacity:0}
+label.fl .row1{display:flex;justify-content:space-between;align-items:center;font-size:13.5px;color:var(--t2)}
+label.fl .row1 b{color:var(--t1);font-weight:500;margin-right:8px}
+.radio{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--t3);flex:none}
+label.fl input:checked~.row1 .radio{border:6px solid var(--t1)}
+label.fl:has(input:checked){background:radial-gradient(500px 220px at 50% 0%,rgba(255,255,255,.06),transparent 70%),var(--tile)}
+label.fl input:focus-visible~.row1 .radio{outline:2px solid var(--glow);outline-offset:3px}
+label.fl .route{display:flex;align-items:center;gap:16px;margin:16px 0 18px}
+label.fl .route b{font-size:56px;font-weight:300;letter-spacing:-.045em;line-height:1}
+label.fl .route .path{flex:1;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.3) 20%,rgba(255,255,255,.3) 80%,transparent)}
+.facts{display:flex;gap:28px;font-size:13px;color:var(--t2)}
+.facts b{display:block;color:var(--t1);font-weight:400;font-size:17px}
+.blk{margin-top:18px}
+.other{grid-column:span 3;padding:16px 26px;display:flex;align-items:center;gap:14px;font-size:14px;color:var(--t2)}
+.other input{background:transparent;border:1px solid rgba(255,255,255,.18);border-radius:999px;padding:7px 14px;width:150px}
+.other input.on{border-color:var(--t1)}
+#v-setup .agent{padding:24px 26px}
+#v-setup .agent .who{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+.ico{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;border:1px solid;flex:none}
+.agent.atc .ico{border-color:rgba(77,163,255,.45)}.agent.pilot .ico{border-color:rgba(199,125,255,.45)}.agent.ground .ico{border-color:rgba(255,179,64,.45)}
+#v-setup .agent h3{font-size:22px;letter-spacing:-.015em}
+.agent .who small{display:block;font-size:12.5px;color:var(--t2)}
+.rules{display:flex;flex-wrap:wrap;gap:6px}
+.go{grid-column:span 3;padding:28px 30px;display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+.go h2{font-size:30px;font-weight:300;letter-spacing:-.03em}
+.go .sub{font-size:14px;color:var(--t2);display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px}
+.toggle{display:inline-flex;border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px;margin-left:auto}
+.toggle button{border:0;background:transparent;padding:7px 16px;border-radius:999px;font-size:13.5px;color:var(--t2);cursor:pointer}
+.toggle button[aria-pressed="true"]{background:rgba(255,255,255,.12);color:var(--t1)}
+.go .pill.solid{padding:13px 28px;font-size:16px}
+
+/* -------------------------------------------------------------- negotiation */
+#v-run .board{grid-template-columns:72px repeat(3,minmax(0,1fr));margin-top:28px;--gx1:5%;--gy1:16.4%;--gx2:67.8%;--gy2:47.6%;--gx3:36.4%;--gy3:79.6%}
+.ticket{grid-column:span 2;padding:26px 30px 24px;display:flex;flex-direction:column;gap:18px}
+.ticket .row1{display:flex;justify-content:space-between;align-items:center;color:var(--t2);font-size:14px}
+.ticket .row1 b{color:var(--t1);font-weight:500;margin-right:10px}
+.ticket .route{display:flex;align-items:center;gap:26px}
+.ticket .route .ap b{display:block;font-size:84px;font-weight:300;letter-spacing:-.045em;line-height:.95}
+.ticket .route .ap span{font-size:13px;color:var(--t2)}
+.ticket .route .ap:last-child{text-align:left}
+.ticket .route .path{flex:1;position:relative;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.35) 20%,rgba(255,255,255,.35) 80%,transparent)}
+.ticket .route .path svg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:22px;height:22px;fill:var(--t1);background:var(--tile);padding:0 3px}
+.fields{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;border-top:1px solid var(--line);padding-top:16px}
+.fields small{display:block;font-size:12px;color:var(--t3)}
+.fields b{display:block;font-size:18px;font-weight:400;margin-top:2px}
+.fields i{font-style:normal;font-size:12px;color:var(--t2)}
+.verdict{display:flex;flex-direction:column;gap:20px;padding:26px 28px}
+.verdict .head{display:flex;align-items:center;gap:12px}
+.verdict .head .okc,.verdict .head .noc,.verdict .head .warnc{width:30px;height:30px}
+.verdict h1{font-size:26px;font-weight:400;letter-spacing:-.02em}
+.verdict .sub{font-size:13.5px;color:var(--t2)}
+.nums{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.nums b{display:block;font-size:46px;font-weight:300;letter-spacing:-.04em;line-height:1;color:var(--green)}
+.nums b.flat{color:var(--t1)}
+.nums span{font-size:13px;color:var(--t2)}
+.spin{width:30px;height:30px;border-radius:50%;border:2px solid #2A2A2A;border-top-color:var(--glow);animation:rot 1s linear infinite;flex:none}
+@keyframes rot{to{transform:rotate(360deg)}}
+.conv{grid-column:span 3;padding:26px 30px 28px}
+.conv header{display:flex;align-items:center;gap:12px}
+.conv h2{font-size:22px;letter-spacing:-.02em}
+.key{margin-left:auto;display:flex;gap:16px;font-size:13px;color:var(--t2)}
+.key span{display:inline-flex;align-items:center;gap:7px}
+.key i{width:16px;height:2px;border-radius:1px}
+.conv svg{width:100%;height:auto;display:block;margin-top:8px}
+.stages{display:grid;text-align:center}
+.stages h4{font-size:13px;color:var(--t2)}
+.chips{display:flex;justify-content:center;gap:6px;margin:10px 0 8px;flex-wrap:wrap}
+.chips span{border:1px solid rgba(255,255,255,.14);border-radius:999px;padding:3px 11px;font-size:13px}
+.chips span.new{border-color:var(--c,var(--atc));color:var(--c,var(--atc))}
+.stages .final .chips span{border-color:rgba(48,209,88,.5);color:var(--green)}
+.stages .solver .chips span{border-color:rgba(217,179,108,.6);color:var(--glow)}
+.stages .cost{font-size:24px;font-weight:300;letter-spacing:-.02em}
+.stages .cost em{font-style:normal;font-size:13px;color:var(--green);margin-left:6px}
+.stages .cost em.up{color:var(--red)}
+.stages .cost small{font-size:13px;color:var(--t2);margin-left:6px}
+#v-run .agent{padding:22px 24px}
+#v-run .agent .who{display:flex;align-items:center;gap:12px}
+#v-run .agent h3{font-size:20px;letter-spacing:-.015em}
+.agent .lock{margin-left:auto;font-size:12px;color:var(--t3)}
+.sees{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-top:20px}
+.sees b{display:block;font-size:22px;font-weight:300;letter-spacing:-.02em}
+.sees span{font-size:12px;color:var(--t2)}
+.msg{padding:20px 24px 18px;display:flex;flex-direction:column;gap:14px;position:relative;min-width:0}
+.msg::before{content:"";position:absolute;left:0;top:0;right:0;height:2px;background:var(--c);opacity:.9}
+.msg.atc{--c:var(--atc)}.msg.pilot{--c:var(--pilot)}.msg.ground{--c:var(--ground)}
+.msg .top{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--t2)}
+.msg .top b{color:var(--c);font-weight:500}
+.msg.wait .top{color:var(--t3)}
+.ring{--p:75;margin-left:auto;width:32px;height:32px;border-radius:50%;background:conic-gradient(var(--t1) calc(var(--p)*1%),#2A2A2A 0);display:grid;place-items:center;flex:none}
+.ring::before{content:"";grid-area:1/1;width:26px;height:26px;border-radius:50%;background:var(--tile)}
+.ring em{grid-area:1/1;position:relative;font-style:normal;font-size:10.5px}
+.change{font-size:22px;font-weight:300;letter-spacing:-.02em;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.change s{color:var(--t3);text-decoration-thickness:1px}
+.change .cg{display:inline-flex;align-items:center;gap:10px;white-space:nowrap}
+.change .ar{color:var(--t3);font-size:18px}
+.change .bad{color:var(--red)}
+.verdictline{display:flex;align-items:center;gap:10px;font-size:14px;flex-wrap:wrap}
+.verdictline.bad{color:var(--red)}
+.verdictline.warn{color:var(--glow)}
+.verdictline.grey{color:var(--t2)}
+.rid{font-size:12px;border:1px solid rgba(255,69,58,.45);color:var(--red);border-radius:999px;padding:1px 9px}
+.rid.neutral{border-color:rgba(255,255,255,.2);color:var(--t2)}
+.msg .foot{border-top:1px solid var(--line);padding-top:12px;margin-top:auto}
+.between{grid-column:span 3;padding:14px 28px;display:flex;align-items:center;justify-content:center;gap:12px;font-size:14px;color:var(--t2);flex-wrap:wrap}
+.between .chips{margin:0}
+.consensus{grid-column:span 3;padding:22px 28px;display:flex;align-items:center;justify-content:center;gap:14px;font-size:22px;font-weight:300;letter-spacing:-.02em;background:radial-gradient(600px 120px at 50% 50%,rgba(48,209,88,.14),transparent 70%),var(--tile)!important;text-align:center}
+.consensus.fallback{background:radial-gradient(600px 120px at 50% 50%,rgba(217,179,108,.14),transparent 70%),var(--tile)!important}
+.consensus.unresolved{background:radial-gradient(600px 120px at 50% 50%,rgba(255,69,58,.14),transparent 70%),var(--tile)!important}
+.consensus .okc,.consensus .warnc,.consensus .noc{width:28px;height:28px}
+.consensus small{display:block;font-size:13.5px;color:var(--t2);letter-spacing:0}
+.decide{grid-column:span 2;padding:26px 30px;display:flex;flex-direction:column;gap:22px}
+.decide h2{font-size:26px;letter-spacing:-.02em}
+.opts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.opt{padding:16px 18px;border-left:1px solid var(--line)}
+.opt:first-child{border-left:0}
+.opt.pick{background:rgba(255,255,255,.05);box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}
+.opt h4{font-size:13px;color:var(--t2)}
+.opt .n{font-size:36px;font-weight:300;letter-spacing:-.035em;margin:6px 0 10px}
+.opt .bar{height:3px;border-radius:2px;background:#222}
+.opt .bar i{display:block;height:100%;border-radius:2px;background:var(--t3)}
+.opt.pick .bar i{background:var(--t1)}
+.opt .f{font-size:12.5px;color:var(--t2);margin-top:8px}
+.actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.actions .sep{flex:1}
+.actions .lbl{font-size:13px;color:var(--t3);margin-right:4px}
+.actions select{background:var(--tile-2);border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:9px 14px;font-size:14px;max-width:340px}
+.done-note{display:flex;align-items:center;gap:10px;font-size:15px}
+.done-note small{color:var(--t2);font-size:13px}
+.err{color:var(--red);font-size:13.5px}
+.brief{padding:26px 28px}
+.brief h2{font-size:22px;letter-spacing:-.02em;margin-bottom:14px}
+.brief ul{list-style:none;margin:0;padding:0}
+.brief li{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:12px;align-items:center;padding:11px 0;border-top:1px solid var(--line);font-size:14.5px}
+.brief li small{color:var(--t3);margin-left:6px;font-size:12.5px}
+.brief li .ev{color:var(--t2);font-size:13.5px;text-align:right}
+.brief li .ev b{color:var(--t1);font-weight:400}
+.note{max-width:1440px;margin:18px auto 40px;padding:0 28px;font-size:12.5px;color:var(--t3)}
+
+/* ------------------------------------------------------------------ results */
+#v-results .hero{max-width:1440px;margin:0 auto;padding:80px 72px 64px;display:grid;grid-template-columns:auto 1fr;gap:48px;align-items:end}
+#v-results .hero .big{font-size:180px;font-weight:300;letter-spacing:-.06em;line-height:.8}
+#v-results .hero .big span{color:var(--t3)}
+#v-results .hero h1{font-size:34px;font-weight:300;letter-spacing:-.025em;line-height:1.15}
+#v-results .hero p{margin:10px 0 0;font-size:16px;color:var(--t2)}
+#v-results .board{grid-template-columns:72px repeat(4,minmax(0,1fr));--gx1:5%;--gy1:0%;--gx2:52.6%;--gy2:22%;--gx3:76.3%;--gy3:73%}
+.stat{padding:22px 24px}
+.stat b{display:block;font-size:44px;font-weight:300;letter-spacing:-.04em;line-height:1}
+.stat b.g{color:var(--green)}.stat b.r{color:var(--red)}
+.stat span{display:block;margin-top:8px;font-size:13px;color:var(--t2)}
+.panel{padding:26px 28px}
+.panel header{display:flex;align-items:center;gap:10px;margin-bottom:22px}
+.panel h2{font-size:22px;letter-spacing:-.02em}
+.span2{grid-column:span 2}.span4{grid-column:span 4}
+.flights{display:grid;grid-template-columns:76px minmax(0,1fr) 86px;row-gap:14px;column-gap:14px;align-items:center;font-size:14px}
+.trk{position:relative;height:6px;border-radius:3px}
+.trk .avail{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:#262626}
+.trk .got{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--green);box-shadow:0 0 10px rgba(48,209,88,.5)}
+.res{text-align:right;color:var(--t2);font-size:13px}
+.res.full{color:var(--green)}.res.miss{color:var(--red)}
+.dots{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--t2)}
+.dots i{width:8px;height:8px;border-radius:50%;background:#3A3A3A}
+.ways{display:flex;flex-direction:column;gap:22px}
+.way .lbl{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;margin-bottom:8px}
+.way .lbl b{font-size:26px;font-weight:300;letter-spacing:-.02em}
+.way .lbl b small{font-size:14px;color:var(--t3)}
+.ten{display:grid;gap:4px}
+.ten i{height:16px;border-radius:3px;background:#1E1E1E}
+.ten i.y{background:#5A5A5A}
+.way.us .ten i.y{background:var(--t1);box-shadow:0 0 8px rgba(255,255,255,.25)}
+.way .c{font-size:12.5px;color:var(--t3);margin-top:6px}
+.sf{padding:24px 26px}
+.sf .n{font-size:40px;font-weight:300;letter-spacing:-.04em;line-height:1}
+.sf h4{font-size:16px;margin:14px 0 2px}
+.sf p{margin:0 0 14px;font-size:13px;color:var(--t2)}
+.zero{display:inline-flex;align-items:center;gap:8px;font-size:13px}
+.own{grid-column:span 4;padding:20px 28px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.own h3{font-size:20px;letter-spacing:-.015em}
+.step{display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.18);border-radius:999px}
+.step button{border:0;background:transparent;width:36px;height:34px;font-size:16px;color:var(--t1);cursor:pointer}
+.step em{font-style:normal;min-width:24px;text-align:center}
+.own .muted{font-size:13px;color:var(--t2)}
+.own .pill.solid{margin-left:auto}
+.progress{height:2px;background:#1E1E1E;border-radius:1px;flex-basis:100%;overflow:hidden}
+.progress i{display:block;height:100%;background:var(--glow);transition:width .3s}
+
+/* ------------------------------------------------------------------ narrow screens */
+@media (max-width:980px){
+  .seams{grid-template-columns:1fr!important}
+  .seams>*{grid-column:auto!important;grid-row:auto!important}
+  .side{writing-mode:horizontal-tb;transform:none;padding:14px 20px;font-size:22px;justify-content:flex-start}
+  #v-setup .hero,#v-results .hero{grid-template-columns:1fr;padding:56px 20px 40px;gap:20px}
+  #v-setup .hero h1{font-size:48px}#v-setup .hero h1:last-child{text-align:left}
+  #v-results .hero .big{font-size:110px}
+  .ticket .route .ap b{font-size:52px}
+  .fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .opts{grid-template-columns:1fr}.opt{border-left:0;border-top:1px solid var(--line)}
+  .capsule .mark,.capsule .state{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 </head>
 <body>
-<header>
-  <div class="brand"><h1>Triad</h1><small>ATC · Pilot · Ground — negotiated disruption recovery, decided by rule</small></div>
-  <form id="start">
-    <label>seed<input type="number" name="seed" placeholder="random"></label>
-    <label>agents<select name="mode">
-      <option value="llm">live model</option><option value="yielding">stub: yielding</option>
-      <option value="greedy">stub: greedy</option><option value="agreeable">stub: agreeable</option>
-      <option value="stubborn">stub: stubborn</option><option value="reckless">stub: reckless</option>
-      <option value="flaky">stub: flaky</option><option value="broken">stub: broken</option><option value="crashing">stub: crashing</option></select></label>
-    <label>model<input name="model" placeholder="default"></label>
-    <label>&nbsp;<button class="primary" type="submit" id="go">Negotiate</button></label>
-  </form>
-  <div class="tabs" role="tablist">
-    <button role="tab" aria-selected="true" data-tab="run">Run</button>
-    <button role="tab" aria-selected="false" data-tab="eval">Evaluation</button>
-  </div>
-  <div class="status"><span class="dot" id="dot"></span><span id="status">idle</span></div>
-</header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="tick" viewBox="0 0 16 16"><path d="M3.8 8.4l2.7 2.7 5.7-6" stroke="#000" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="x" viewBox="0 0 16 16"><path d="M5 5l6 6M11 5l-6 6" stroke="#000" stroke-width="2.2" stroke-linecap="round"/></symbol>
+  <symbol id="bang" viewBox="0 0 16 16"><path d="M8 4v5" stroke="#000" stroke-width="2.2" stroke-linecap="round"/><circle cx="8" cy="12" r="1.2" fill="#000"/></symbol>
+  <symbol id="tower" viewBox="0 0 24 24"><path fill="#4DA3FF" d="M6.5 3h11l-1.6 5.2H8.1zM9.6 9.6h4.8l1.1 11.4H8.5zM4.5 8.2h15v1.5h-15z"/></symbol>
+  <symbol id="plane" viewBox="0 0 24 24"><path fill="#C77DFF" d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></symbol>
+  <symbol id="cone" viewBox="0 0 24 24"><path fill="#FFB340" d="M10.2 2.5h3.6l1.1 4H9.1zM8.6 8.3h6.8l1.1 4H7.5zM7 14.1h10l1.1 4.2H5.9zM3.5 19.8h17v2h-17z"/></symbol>
+  <symbol id="jet" viewBox="0 0 24 24"><path transform="rotate(90 12 12)" d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5z"/></symbol>
+</svg>
 
-<main id="tab-run">
-  <aside>
-    <div class="card" id="scenario"><h2>Scenario</h2><p class="muted">Start a negotiation to load a disruption from the DOT 2015 on-time data.</p></div>
-    <div class="card" id="space" hidden><h2>Decision space</h2><div class="kv" id="space-kv"></div></div>
-    <div class="card" id="rules" hidden><h2>Hard rules vs. proposal on the table</h2><div class="rules" id="rules-list"></div></div>
-    <div class="card" id="ledger-card" hidden>
-      <h2>Ledger <span class="muted" id="ledger-n"></span></h2>
-      <div class="ledger scroll"><table><thead><tr><th>#</th><th>rnd</th><th>actor</th><th>type</th><th>hash</th></tr></thead><tbody id="ledger-body"></tbody></table></div>
-      <div class="human"><button id="verify">Verify chain</button><span id="verify-out" class="muted"></span>
-        <a id="audit-md" class="muted" target="_blank" hidden>audit.md</a><a id="audit-json" class="muted" target="_blank" hidden>audit.json</a></div>
-    </div>
-  </aside>
-  <section class="flow">
-    <div id="rounds" class="card" hidden><h2>Negotiation</h2><div id="rounds-body" style="display:flex;flex-direction:column;gap:16px"></div></div>
-    <div id="decision" class="card decision" hidden></div>
-    <div id="error" class="card err" hidden></div>
-  </section>
-</main>
+<nav class="capsule" aria-label="Sections">
+  <span class="mark">TRIAD<sup>™</sup></span>
+  <button type="button" data-view="setup" aria-current="page">Set up</button>
+  <button type="button" data-view="run">Negotiation</button>
+  <button type="button" data-view="results">Results</button>
+  <span class="state" id="state"><span class="dot"></span><span id="state-text">Ready</span></span>
+</nav>
 
-<main id="tab-eval" hidden style="grid-template-columns:1fr">
-  <div class="card"><h2>Latest evaluation <span class="muted" id="eval-tag"></span></h2>
-    <p class="muted" style="margin:0 0 10px">Runs over seeds disjoint from the demo seeds. Stub arms show what the judge does with scripted behaviour; a live arm shows what the model adds — or does not.</p>
-    <div class="scroll"><table id="eval-table"></table></div>
-    <details id="eval-config"><summary>configuration</summary><pre class="mono" id="eval-config-pre"></pre></details>
+<!-- ============================================================== SET UP -->
+<section id="v-setup">
+  <header class="hero">
+    <h1>Three agents.</h1>
+    <div class="mid"><div class="orbit" aria-hidden="true"><svg viewBox="0 0 84 84"><path d="M42 6L8 66h68z" fill="none" stroke="rgba(255,255,255,.18)" stroke-dasharray="3 4"/><circle cx="42" cy="46" r="3" fill="#F2F2F2"/></svg><i class="a"></i><i class="p"></i><i class="g"></i></div>Up to three rounds to agree on a landing plan</div>
+    <h1>One late flight.</h1>
+  </header>
+  <div class="seams board">
+    <div class="side lit" style="grid-row:span 2">Flight</div>
+    <div id="flight-cards" style="display:contents"></div>
+    <div class="other">Or any of 376,125 delayed flights from 2015<input id="seed-input" inputmode="numeric" placeholder="Random" aria-label="Scenario seed, leave empty for a random flight"></div>
+
+    <div class="side">Agents</div>
+    <section class="agent atc"><div class="who"><span class="ico"><svg width="20" height="20"><use href="#tower"/></svg></span><div><h3>ATC</h3><small>Approach control</small></div></div>
+      <div class="rules"><span class="tag tip" tabindex="0">Slot capacity<span class="bubble">No 15-minute window takes more arrivals than the airport can accept.</span></span><span class="tag tip" tabindex="0">Wake spacing<span class="bubble">Enough time behind the aircraft ahead for its wake category.</span></span><span class="tag tip" tabindex="0">Holding limit<span class="bubble">No hold longer than the facility allows.</span></span></div></section>
+    <section class="agent pilot"><div class="who"><span class="ico"><svg width="20" height="20"><use href="#plane"/></svg></span><div><h3>Pilot</h3><small>Flight deck and ops</small></div></div>
+      <div class="rules"><span class="tag tip" tabindex="0">Fuel reserve<span class="bubble">Land with enough fuel for the alternate plus 45 minutes.</span></span><span class="tag tip" tabindex="0">Turbulence<span class="bubble">No holding where turbulence is reported.</span></span><span class="tag tip" tabindex="0">Diversion fuel<span class="bubble">Always keep enough fuel to reach the alternate.</span></span></div></section>
+    <section class="agent ground"><div class="who"><span class="ico"><svg width="20" height="20"><use href="#cone"/></svg></span><div><h3>Ground</h3><small>Stands and crew</small></div></div>
+      <div class="rules"><span class="tag tip" tabindex="0">Gate size<span class="bubble">The gate fits the aircraft.</span></span><span class="tag tip" tabindex="0">Gate free<span class="bubble">The gate is free for the whole turn, with a buffer.</span></span><span class="tag tip" tabindex="0">Turn time<span class="bubble">The minimum turnaround is met before the next departure.</span></span><span class="tag tip" tabindex="0">Crew duty<span class="bubble">The crew stays within its duty limit, or a reserve crew takes over.</span></span></div></section>
+
+    <div class="side lit">Go</div>
+    <section class="go">
+      <div><h2>Ready when you are</h2><div class="sub" id="go-sub">About 10 seconds. You approve the result.</div></div>
+      <div class="toggle" role="group" aria-label="Mode">
+        <button type="button" id="mode-normal" aria-pressed="true">Normal agents</button>
+        <button type="button" id="mode-stress" aria-pressed="false" class="tip">Stress test<span class="bubble">Rerun with scripted agents that break rules, never agree or crash, or on a flight with too little fuel to land.</span></button>
+      </div>
+      <button type="button" class="pill solid" id="start">Start negotiation</button>
+    </section>
   </div>
-</main>
+  <div style="height:60px"></div>
+</section>
+
+<!-- ============================================================== NEGOTIATION -->
+<section id="v-run" hidden>
+  <div class="seams board" id="run-board">
+    <div class="side lit">Flight</div>
+    <div class="empty" style="grid-column:span 3"><div><b>No negotiation yet</b>Pick a flight and start one.</div><button type="button" class="pill solid" data-goto="setup">Set up a run</button></div>
+  </div>
+  <p class="note" id="run-note"></p>
+</section>
+
+<!-- ============================================================== RESULTS -->
+<section id="v-results" hidden>
+  <header class="hero" id="res-hero"></header>
+  <div class="seams board" id="res-board"></div>
+  <div style="height:60px"></div>
+</section>
 
 <script>
-const PARTIES=["ATC","PILOT","GROUND"];
-const $=s=>document.querySelector(s);
-const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const fmt=n=>Number(n).toLocaleString(undefined,{maximumFractionDigits:0});
-const key=p=>p?[p.slot_id,p.pilot_action,p.gate,p.crew_plan].join("|"):"";
-const pct=v=>(100*v).toFixed(0)+"%",f0=v=>fmt(v),f2=v=>Number(v).toFixed(2);
-const hhmm=m=>`${String(Math.floor(m/60)%24).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+"use strict";
+const CITY = {"ABE":"Allentown","ABI":"Abilene","ABQ":"Albuquerque","ABR":"Aberdeen","ABY":"Albany","ACK":"Nantucket","ACT":"Waco","ACV":"Arcata/Eureka","ACY":"Atlantic City","ADK":"Adak","ADQ":"Kodiak","AEX":"Alexandria","AGS":"Augusta","AKN":"King Salmon","ALB":"Albany","ALO":"Waterloo","AMA":"Amarillo","ANC":"Anchorage","APN":"Alpena","ASE":"Aspen","ATL":"Atlanta","ATW":"Appleton","AUS":"Austin","AVL":"Asheville","AVP":"Wilkes-Barre/Scranton","AZO":"Kalamazoo","BDL":"Windsor Locks","BET":"Bethel","BFL":"Bakersfield","BGM":"Binghamton","BGR":"Bangor","BHM":"Birmingham","BIL":"Billings","BIS":"Bismarck","BJI":"Bemidji","BLI":"Bellingham","BMI":"Bloomington","BNA":"Nashville","BOI":"Boise","BOS":"Boston","BPT":"Beaumont/Port Arthur","BQK":"Brunswick","BQN":"Aguadilla","BRD":"Brainerd","BRO":"Brownsville","BRW":"Barrow","BTM":"Butte","BTR":"Baton Rouge","BTV":"Burlington","BUF":"Buffalo","BUR":"Burbank","BWI":"Baltimore","BZN":"Bozeman","CAE":"Columbia","CAK":"Akron","CDC":"Cedar City","CDV":"Cordova","CEC":"Crescent City","CHA":"Chattanooga","CHO":"Charlottesville","CHS":"Charleston","CID":"Cedar Rapids","CIU":"Sault Ste. Marie","CLD":"San Diego","CLE":"Cleveland","CLL":"College Station","CLT":"Charlotte","CMH":"Columbus","CMI":"Champaign/Urbana","CMX":"Hancock","CNY":"Moab","COD":"Cody","COS":"Colorado Springs","COU":"Columbia","CPR":"Casper","CRP":"Corpus Christi","CRW":"Charleston","CSG":"Columbus","CVG":"Covington","CWA":"Mosinee","DAB":"Daytona Beach","DAL":"Dallas","DAY":"Dayton","DBQ":"Dubuque","DCA":"Arlington","DEN":"Denver","DFW":"Dallas-Fort Worth","DHN":"Dothan","DIK":"Dickinson","DLG":"Dillingham","DLH":"Duluth","DRO":"Durango","DSM":"Des Moines","DTW":"Detroit","DVL":"Devils Lake","EAU":"Eau Claire","ECP":"Panama City","EGE":"Eagle","EKO":"Elko","ELM":"Elmira","ELP":"El Paso","ERI":"Erie","ESC":"Escanaba","EUG":"Eugene","EVV":"Evansville","EWN":"New Bern","EWR":"Newark","EYW":"Key West","FAI":"Fairbanks","FAR":"Fargo","FAT":"Fresno","FAY":"Fayetteville","FCA":"Kalispell","FLG":"Flagstaff","FLL":"Ft. Lauderdale","FNT":"Flint","FSD":"Sioux Falls","FSM":"Fort Smith","FWA":"Fort Wayne","GCC":"Gillette","GCK":"Garden City","GEG":"Spokane","GFK":"Grand Forks","GGG":"Longview","GJT":"Grand Junction","GNV":"Gainesville","GPT":"Gulfport-Biloxi","GRB":"Green Bay","GRI":"Grand Island","GRK":"Killeen","GRR":"Grand Rapids","GSO":"Greensboro","GSP":"Greer","GST":"Gustavus","GTF":"Great Falls","GTR":"Columbus-Starkville-West Point","GUC":"Gunnison","GUM":"Agana","HDN":"Hayden","HIB":"Hibbing","HLN":"Helena","HNL":"Honolulu","HOB":"Hobbs","HOU":"Houston","HPN":"White Plains","HRL":"Harlingen","HSV":"Huntsville","HYA":"Hyannis","HYS":"Hays","IAD":"Chantilly","IAG":"Niagara Falls","IAH":"Houston","ICT":"Wichita","IDA":"Idaho Falls","ILG":"Wilmington","ILM":"Wilmington","IMT":"Iron Mountain/Kingsford","IND":"Indianapolis","INL":"International Falls","ISN":"Williston","ISP":"Islip","ITH":"Ithaca","ITO":"Hilo","JAC":"Jackson","JAN":"Jackson","JAX":"Jacksonville","JFK":"New York","JLN":"Joplin","JMS":"Jamestown","JNU":"Juneau","KOA":"Kailua/Kona","KTN":"Ketchikan","LAN":"Lansing","LAR":"Laramie","LAS":"Las Vegas","LAW":"Lawton","LAX":"Los Angeles","LBB":"Lubbock","LBE":"Latrobe","LCH":"Lake Charles","LEX":"Lexington","LFT":"Lafayette","LGA":"New York","LGB":"Long Beach","LIH":"Lihue","LIT":"Little Rock","LNK":"Lincoln","LRD":"Laredo","LSE":"La Crosse","LWS":"Lewiston","MAF":"Midland","MBS":"Saginaw","MCI":"Kansas City","MCO":"Orlando","MDT":"Harrisburg","MDW":"Chicago","MEI":"Meridian","MEM":"Memphis","MFE":"McAllen","MFR":"Medford","MGM":"Montgomery","MHK":"Manhattan","MHT":"Manchester","MIA":"Miami","MKE":"Milwaukee","MKG":"Muskegon","MLB":"Melbourne","MLI":"Moline","MLU":"Monroe","MMH":"Mammoth Lakes","MOB":"Mobile","MOT":"Minot","MQT":"Marquette","MRY":"Monterey","MSN":"Madison","MSO":"Missoula","MSP":"Minneapolis","MSY":"New Orleans","MTJ":"Montrose","MVY":"Marthas Vineyard","MYR":"Myrtle Beach","OAJ":"Jacksonville","OAK":"Oakland","OGG":"Kahului","OKC":"Oklahoma City","OMA":"Omaha","OME":"Nome","ONT":"Ontario","ORD":"Chicago","ORF":"Norfolk","ORH":"Worcester","OTH":"North Bend","OTZ":"Kotzebue","PAH":"Paducah","PBG":"Plattsburgh","PBI":"West Palm Beach","PDX":"Portland","PHF":"Newport News","PHL":"Philadelphia","PHX":"Phoenix","PIA":"Peoria","PIB":"Hattiesburg-Laurel","PIH":"Pocatello","PIT":"Pittsburgh","PLN":"Pellston","PNS":"Pensacola","PPG":"Pago Pago","PSC":"Pasco","PSE":"Ponce","PSG":"Petersburg","PSP":"Palm Springs","PUB":"Pueblo","PVD":"Providence","PWM":"Portland","RAP":"Rapid City","RDD":"Redding","RDM":"Redmond","RDU":"Raleigh","RHI":"Rhinelander","RIC":"Richmond","RKS":"Rock Springs","RNO":"Reno","ROA":"Roanoke","ROC":"Rochester","ROW":"Roswell","RST":"Rochester","RSW":"Ft. Myers","SAF":"Santa Fe","SAN":"San Diego","SAT":"San Antonio","SAV":"Savannah","SBA":"Santa Barbara","SBN":"South Bend","SBP":"San Luis Obispo","SCC":"Deadhorse","SCE":"State College","SDF":"Louisville","SEA":"Seattle","SFO":"San Francisco","SGF":"Springfield","SGU":"St George","SHV":"Shreveport","SIT":"Sitka","SJC":"San Jose","SJT":"San Angelo","SJU":"San Juan","SLC":"Salt Lake City","SMF":"Sacramento","SMX":"Santa Maria","SNA":"Santa Ana","SPI":"Springfield","SPS":"Wichita Falls","SRQ":"Sarasota","STC":"St Cloud","STL":"St Louis","STT":"Charlotte Amalie","STX":"Christiansted","SUN":"Hailey","SUX":"Sioux City","SWF":"Newburgh","SYR":"Syracuse","TLH":"Tallahassee","TOL":"Toledo","TPA":"Tampa","TRI":"Bristol","TTN":"Trenton","TUL":"Tulsa","TUS":"Tucson","TVC":"Traverse City","TWF":"Twin Falls","TXK":"Texarkana","TYR":"Tyler","TYS":"Knoxville","UST":"St. Augustine","VEL":"Vernal","VLD":"Valdosta","VPS":"Valparaiso","WRG":"Wrangell","WYS":"West Yellowstone","XNA":"Fayetteville/Springdale/Rogers","YAK":"Yakutat","YUM":"Yuma"};
+const DEMO_SEEDS = [7, 29, 101];
+const LOW_FUEL_SEED = 1021;          // UA1768, a real 2015 flight where no landing option is legal
+const EVAL_SEED_BASE = 1000;         // the CLI's evaluation range, never the demo flights
+const STRESS = {breaks: {mode: "greedy", label: "Breaks rules"}, never: {mode: "stubborn", label: "Never agrees"},
+                crashes: {mode: "crashing", label: "Crashes"}, lowfuel: {seed: LOW_FUEL_SEED, label: "Low fuel"}};
+const PARTIES = ["ATC", "PILOT", "GROUND"];
+const PNAME = {ATC: "ATC", PILOT: "Pilot", GROUND: "Ground"};
+const PCLS = {ATC: "atc", PILOT: "pilot", GROUND: "ground"};
+const PCOL = {ATC: "#4DA3FF", PILOT: "#C77DFF", GROUND: "#FFB340"};
+const ACTION = {HOLD: "Hold", REDUCE_SPEED: "Slow down", SPEED_UP: "Speed up", CONTINUE: "Continue", DIVERT: "Divert"};
+const CREW = {RESERVE_CREW: "Reserve crew", SAME_CREW: "Same crew"};
+const RULE = {
+  "ATC-SLOT-CAP": ["Slot full", "Arrival slot capacity"], "ATC-SEP-WAKE": ["Spacing", "Wake spacing"],
+  "ATC-HOLD-MAX": ["Hold too long", "Holding limit"], "PLT-FUEL-RES": ["Fuel reserve", "Fuel reserve"],
+  "PLT-TURB-HOLD": ["Turbulence", "Holding in turbulence"], "PLT-DIVERT-FUEL": ["Diversion fuel", "Diversion fuel"],
+  "GND-GATE-SIZE": ["Gate size", "Gate size"], "GND-GATE-FREE": ["Gate busy", "Gate free"],
+  "GND-TURN-MIN": ["Turn time", "Minimum turnaround"], "GND-CREW-DUTY": ["Crew duty", "Crew duty limit"],
+  "PUB-SCHEMA": ["Not a valid plan", "Not in the decision space"], "PUB-DIVERT": ["Diversion", "Diversion is never negotiated"]};
+const OWNER = id => id.startsWith("ATC") ? "ATC" : id.startsWith("PLT") ? "PILOT" : id.startsWith("GND") ? "GROUND" : null;
 
-let state=null;
-function reset(){state={runId:null,scenario:null,rounds:{},onTable:null,current:null,outcome:null,human:null,entries:[],es:null};
-  for(const id of["space","rules","ledger-card","rounds","decision","error"])$("#"+id).hidden=true;
-  $("#rounds-body").innerHTML="";$("#ledger-body").innerHTML="";$("#verify-out").textContent="";}
+const $ = (s, el = document) => el.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const n0 = v => Math.round(v).toLocaleString("en-US");
+const minus = v => (v < 0 ? "−" : v > 0 ? "+" : "") + n0(Math.abs(v));
+const hhmm = m => { m = ((Math.round(m) % 1440) + 1440) % 1440; return String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"); };
+const ok = sz => `<span class="okc"><svg width="${sz}" height="${sz}"><use href="#tick"/></svg></span>`;
+const no = sz => `<span class="noc"><svg width="${sz}" height="${sz}"><use href="#x"/></svg></span>`;
+const warn = sz => `<span class="warnc"><svg width="${sz}" height="${sz}"><use href="#bang"/></svg></span>`;
+const tipHTML = (inner, bubble, cls = "") => `<span class="${cls} tip" tabindex="0">${inner}<span class="bubble">${bubble}</span></span>`;
+const store = {get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+               set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } }};
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) { const d = body.detail; throw new Error(typeof d === "string" ? d : d?.error || `HTTP ${r.status}`); }
+  return body;
+}
+const post = (path, body) => api(path, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(body)});
 
-function setStatus(text,cls){$("#status").textContent=text;$("#dot").className="dot "+(cls||"");}
-
-// ---------------------------------------------------------------- scenario
-function renderScenario(d){
-  const s=d.scenario,f=s.flight,pv=s.provenance||{};
-  const b=k=>`<span class="badge ${pv[k]||'synthetic'}">${pv[k]||"synthetic"}</span>`;
-  $("#scenario").innerHTML=`<h2>Scenario <span class="muted mono">${esc(s.id)} · seed ${s.seed}</span></h2>
-  <h3>${esc(f.airline_name)} ${esc(f.airline)}${f.number} ${esc(f.origin)}→${esc(f.dest)} ${b("flight")}</h3>
-  <p style="margin:6px 0 10px;color:var(--ink2)">${esc(s.disruption.note)}</p>
-  <dl class="kv">
-    <dt>trigger</dt><dd>${esc(s.disruption.trigger)} — weather ${f.weather_delay_min} min, late aircraft ${f.late_aircraft_delay_min} min ${b("disruption.trigger")}</dd>
-    <dt>aircraft</dt><dd>${esc(s.aircraft.name)} · ${s.aircraft.wake} · ${s.aircraft.seats} seats ${b("aircraft")}</dd>
-    <dt>ETA</dt><dd>${hhmm(s.pilot.eta_min)} (sched ${esc(f.sched_arr)}, +${f.departure_delay_min} off ${esc(f.origin)})</dd>
-    <dt>arrival rate</dt><dd>${s.atc.effective_aar_per_15}/15 min of nominal ${s.atc.nominal_aar_per_15}, ${s.atc.arrival_runways} rwy; ${s.bank.length} in bank ${b("bank")}</dd>
-    <dt>fuel</dt><dd>${fmt(s.pilot.fuel.on_board_kg??s.pilot.fuel.fuel_on_board_kg??0)} kg, alternate ${esc(s.pilot.fuel.alternate||"")} ${b("pilot.fuel")}</dd>
-    <dt>pax</dt><dd>${s.pilot.pax_total} aboard, ${s.pilot.connections.length} connections ${b("pilot.connections[].pax")}</dd>
-    <dt>ground</dt><dd>gate ${esc(s.ground.original_gate)}, crew duty ends ${hhmm(s.ground.crew_duty_end_min)}, next leg ${esc(s.ground.next_leg?.number?("#"+s.ground.next_leg.number):"")} ${b("ground.next_leg")}</dd>
-    <dt>agents</dt><dd>${esc(d.mode)}${d.model?" · <code>"+esc(d.model)+"</code>":""}</dd>
-  </dl>
-  <details style="margin-top:8px"><summary>what happened historically</summary><div class="kv muted" style="margin-top:4px">
-    <dt>arrival delay</dt><dd>${s.historical.arrival_delay_min} min</dd><dt>next leg dep. delay</dt><dd>${s.historical.next_leg_departure_delay_min} min</dd></div></details>`;
+/* ------------------------------------------------------------------ navigation and status */
+function show(view) {
+  for (const v of ["setup", "run", "results"]) $(`#v-${v}`).hidden = v !== view;
+  document.querySelectorAll(".capsule [data-view]").forEach(b => { if (b.dataset.view === view) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
+  if (view === "results") renderResults();
+  setState();
+  window.scrollTo({top: 0});
+}
+document.addEventListener("click", e => {
+  const b = e.target.closest("[data-view],[data-goto]");
+  if (b) show(b.dataset.view || b.dataset.goto);
+});
+function setState() {
+  const dot = $("#state .dot"), txt = $("#state-text");
+  dot.className = "dot";
+  const view = ["setup", "run", "results"].find(v => !$(`#v-${v}`).hidden);
+  if (view === "results" && batch.running) { dot.classList.add("busy"); txt.textContent = `Batch ${batch.done} of ${batch.total}`; return; }
+  if (view === "results") { const r = resultsData(); txt.textContent = r ? `${r.n} unseen flights` : "No batch yet"; return; }
+  if (run.error) { dot.classList.add("err"); txt.textContent = "Error"; return; }
+  if (run.id && !run.outcome) { dot.classList.add("busy"); txt.textContent = run.round ? `Round ${run.round}` : "Starting"; return; }
+  if (run.outcome) { txt.textContent = `${run.outcome.wall_s.toFixed(1)} s`; return; }
+  txt.textContent = "Ready";
 }
 
-function renderSpace(p){
-  $("#space").hidden=false;
-  $("#space-kv").innerHTML=`<dt>proposals</dt><dd>${p.n_proposals}</dd><dt>legal landings</dt><dd>${p.n_feasible_landing}</dd>
-  <dt>mutually acceptable</dt><dd>${p.n_mutually_acceptable} <span class="muted">(every party ≥ ${p.acceptance_threshold})</span></dd>
-  <dt>utility</dt><dd class="muted" style="font-size:11.5px">${esc(p.utility_rule)}</dd>`;
-}
-
-function renderRules(ev){
-  if(!ev)return;$("#rules").hidden=false;
-  const rows=[];
-  for(const p of PARTIES)for(const v of(ev.verdicts[p]||[]))
-    rows.push(`<div class="rule ${v.ok?"":"bad"}"><span class="m"></span><div><code>${esc(v.rule_id)}</code> <span class="chip ${p}">${p}</span>
-      <span class="muted">measured ${esc(v.measured)} / limit ${esc(v.limit)}</span><div class="d">${esc(v.detail)}</div></div></div>`);
-  $("#rules-list").innerHTML=`<div class="muted" style="margin-bottom:6px">on the table: <code>${esc(key(ev.proposal))}</code> · system cost ${fmt(ev.system_cost)}</div>`+rows.join("");
-}
-
-// ---------------------------------------------------------------- rounds
-function roundEl(r,final,onTable){
-  let el=document.getElementById("round-"+r);
-  if(el)return el;
-  el=document.createElement("div");el.id="round-"+r;el.className="round"+(final?" final":"");
-  el.innerHTML=`<div class="round-head"><h3>Round ${r}${final?" — final vote":""}</h3><span class="on">on the table <code>${esc(onTable)}</code></span></div>
-  <div class="cols">${PARTIES.map(p=>`<div class="agent ${p}" id="a-${r}-${p}"><div class="who"><span>${p}</span><small id="v-${r}-${p}"></small></div><div class="pending">thinking…</div></div>`).join("")}</div>
-  <div class="round-foot" id="foot-${r}"></div>`;
-  $("#rounds").hidden=false;$("#rounds-body").appendChild(el);return el;
-}
-
-function renderMessage(e){
-  const m=e.payload.message,el=document.getElementById(`a-${e.round}-${e.actor}`);if(!el)return;
-  const cls=m.decision==="ACCEPT"?"ok":m.decision==="REJECT"?"bad":"warn";
-  const calls=Object.entries(e.payload.raw||{}).filter(([k])=>k.endsWith("_call")).map(([,c])=>c);
-  const tele=calls.length?`<small class="muted mono">${calls.map(c=>`${(c.latency_s??0).toFixed(1)}s · ${c.usage?.output_tokens??"?"} out`).join(" / ")}</small>`:"";
-  el.innerHTML=`<div class="who"><span>${e.actor}</span><small id="v-${e.round}-${e.actor}">${document.getElementById(`v-${e.round}-${e.actor}`)?.innerHTML||""}</small></div>
-  <div class="msg"><span class="chip ${cls}">${esc(m.decision)}</span>${m.proposal?`<code>${esc(key(m.proposal))}</code>`:""}
-    ${(m.rejected_rule_ids||[]).map(r=>`<code class="muted">${esc(r)}</code>`).join("")}
-    ${m.concessions?.length?`<span class="muted">concedes: ${esc(m.concessions.join(", "))}</span>`:""}</div>
-  <div class="rat">${esc(m.rationale)}</div>${tele}<div class="ruling" id="rul-${e.round}-${e.actor}"><span class="muted">judging…</span></div>`;
-}
-
-function renderAbstain(e){
-  const el=document.getElementById(`a-${e.round}-${e.actor}`);if(!el)return;
-  el.innerHTML=`<div class="who"><span>${e.actor}</span></div><div class="msg"><span class="chip bad">ABSTAIN</span></div>
-  <div class="rat err">${esc(e.payload.reason)}</div><div class="ruling">counted as a non-accept; two abstains hand the decision to the solver</div>`;
-}
-
-const RULING_TEXT={
-  ACCEPT_OK:p=>`accepted; own utility <b>${p.my_utility}</b>`,
-  SELF_VIOLATION:p=>`ACCEPT refused — fails own rules <b>${p.failing_rules.map(v=>v.rule_id).join(", ")}</b>`,
-  REJECT_PREFERENCE:p=>`vote against on preference (utility ${p.my_utility}, ${p.above_threshold?"above":"below"} threshold)`,
-  UNFOUNDED_REJECT:p=>`cited <b>${p.claimed.join(", ")}</b> but the proposal passes them — treated as a plain non-accept`,
-  LATE_COUNTER:()=>`counter in the final vote is ignored — the final round only votes`,
-  INFEASIBLE_COUNTER:p=>`counter discarded — fails <b>${p.failing_rules.map(v=>v.rule_id).join(", ")}</b>`,
-  NON_CONCESSION:p=>`${esc(p.note||"counter is dearer for others and no better for you")}`,
-  COUNTER_OK:p=>`feasible counter; system cost <b>${fmt(p.system_cost)}</b>${p.mutually_acceptable?", mutually acceptable":""}`,
+/* ------------------------------------------------------------------ set up */
+const setup = {seed: DEMO_SEEDS[0], stress: false, stressKind: "breaks", scenarios: {}};
+const blockedTag = sc => {
+  const by = sc.infeasible_by_rule || {};
+  const [rid] = Object.entries(by).filter(([id]) => OWNER(id)).sort((a, b) => b[1] - a[1])[0] || ["ATC-SLOT-CAP"];
+  const top = OWNER(rid);
+  const text = rid.startsWith("ATC") ? "Slots are scarce" : rid.startsWith("PLT") ? "Fuel is tight" : rid === "GND-CREW-DUTY" ? "Crew is out of hours" : "Gates are full";
+  const why = Object.entries(by).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([id, n]) => `${RULE[id]?.[1] || id} rules out ${n}`).join(", ");
+  return `<span class="tag ${PCLS[top]} tip" tabindex="0">${text}<span class="bubble">${esc(why)} of ${sc.n_total} possible plans.</span></span>`;
 };
-function renderRuling(e){
-  const el=document.getElementById(`rul-${e.round}-${e.payload.agent}`);if(!el)return;
-  const cls=["ACCEPT_OK","COUNTER_OK"].includes(e.type)?"ok":["SELF_VIOLATION","UNFOUNDED_REJECT","INFEASIBLE_COUNTER"].includes(e.type)?"bad":"warn";
-  el.innerHTML=`<span class="chip ${cls}">${esc(e.type)}</span> ${(RULING_TEXT[e.type]||(()=>""))(e.payload)}`;
+const airline = name => String(name || "").replace(/\s+(Inc\.|Co\.|Corporation|Airlines Inc\.)$/i, "").replace(/ Airlines$/, "");
+const dateStr = d => new Date(d + "T12:00:00").toLocaleDateString("en-GB", {day: "numeric", month: "short", year: "numeric"});
+function flightCard(seed, sc) {
+  const s = sc?.scenario, f = s?.flight;
+  const checked = setup.seed === seed ? "checked" : "";
+  if (!s) return `<label class="fl"><input type="radio" name="flight" value="${seed}" ${checked}><div class="row1"><span><b>Loading</b>seed ${seed}</span><span class="radio"></span></div></label>`;
+  return `<label class="fl"><input type="radio" name="flight" value="${seed}" ${checked}>
+    <div class="row1"><span><b>${esc(f.airline)}${f.number}</b>${esc(airline(f.airline_name))}, ${esc(dateStr(f.date))}</span><span class="radio"></span></div>
+    <div class="route"><b>${esc(f.origin)}</b><span class="path"></span><b>${esc(f.dest)}</b></div>
+    <div class="facts"><div><b>${f.departure_delay_min} min</b>late</div><div><b>${s.disruption.trigger === "WEATHER" ? "Weather" : "Late aircraft"}</b>cause</div><div><b>${s.pilot.pax_total}</b>aboard</div></div>
+    <div class="blk">${blockedTag(sc)}</div></label>`;
+}
+function renderSetup() {
+  $("#flight-cards").innerHTML = DEMO_SEEDS.map(s => flightCard(s, setup.scenarios[s])).join("");
+  const input = $("#seed-input");
+  input.classList.toggle("on", !DEMO_SEEDS.includes(setup.seed));
+  $("#mode-normal").setAttribute("aria-pressed", String(!setup.stress));
+  $("#mode-stress").setAttribute("aria-pressed", String(setup.stress));
+  $("#go-sub").innerHTML = setup.stress
+    ? Object.entries(STRESS).map(([k, v]) => `<button type="button" class="pill small" data-stress="${k}" aria-pressed="${setup.stressKind === k}">${v.label}</button>`).join("")
+    : "About 10 seconds. You approve the result.";
+}
+$("#flight-cards").addEventListener("change", e => { if (e.target.name === "flight") { setup.seed = Number(e.target.value); $("#seed-input").value = ""; renderSetup(); } });
+$("#seed-input").addEventListener("input", e => {
+  const v = e.target.value.trim();
+  setup.seed = v === "" ? DEMO_SEEDS[0] : (/^\d+$/.test(v) ? Number(v) : null);
+  document.querySelectorAll('#flight-cards input').forEach(i => { i.checked = v === "" && Number(i.value) === setup.seed; });
+  e.target.classList.toggle("on", v !== "");
+});
+$("#mode-normal").addEventListener("click", () => { setup.stress = false; renderSetup(); });
+$("#mode-stress").addEventListener("click", () => { setup.stress = true; renderSetup(); });
+$("#go-sub").addEventListener("click", e => { const b = e.target.closest("[data-stress]"); if (b) { setup.stressKind = b.dataset.stress; renderSetup(); } });
+$("#start").addEventListener("click", () => {
+  const typed = $("#seed-input").value.trim();
+  let seed = typed === "" ? setup.seed : (/^\d+$/.test(typed) ? Number(typed) : null);
+  if (typed !== "" && seed === null) seed = undefined;
+  let mode = "llm";
+  if (setup.stress) { const k = STRESS[setup.stressKind]; if (k.mode) mode = k.mode; if (k.seed) seed = k.seed; }
+  startRun({seed: seed ?? null, mode});
+});
+async function loadSetup() {
+  renderSetup();
+  await Promise.all(DEMO_SEEDS.map(async s => { try { setup.scenarios[s] = await api(`/api/scenario?seed=${s}`); } catch { /* card stays in loading state */ } renderSetup(); }));
 }
 
-function renderRoundEnd(e){
-  const p=e.payload,el=document.getElementById(`foot-${e.round}`);if(!el)return;
-  for(const party of PARTIES){const r=document.getElementById(`rul-${e.round}-${party}`);
-    if(r&&p.outcomes[party]==="REJECT_OK")r.innerHTML=`<span class="chip ok">REJECT_OK</span> rejects on a rule the proposal really fails`;}
-  el.innerHTML=p.consensus?`<span class="chip ok">CONSENSUS</span> all three accepted <code>${esc(state.onTable)}</code>`
-    :`no consensus · next on the table <code>${esc(p.next_on_table)}</code> <span class="muted">— ${esc(p.rule)}</span>`;
+/* ------------------------------------------------------------------ negotiation: state */
+let run = {};
+function startRun(req) {
+  if (run.es) run.es.close();
+  run = {req, entries: [], round: 0, outcome: null, human: null, error: null, open: new Set(["auto"]), verify: null, options: null, choosing: false, msg: ""};
+  show("run");
+  renderRun();
+  post("/api/runs", {seed: req.seed, mode: req.mode}).then(r => {
+    run.id = r.run_id; run.model = r.model;
+    const es = run.es = new EventSource(`/api/runs/${r.run_id}/events`);
+    es.addEventListener("scenario", ev => { run.scn = JSON.parse(ev.data); schedule(); });
+    es.addEventListener("ledger", ev => { const e = JSON.parse(ev.data); run.entries.push(e); if (e.type === "ROUND_START") run.round = e.round; schedule(); });
+    es.addEventListener("done", ev => { run.outcome = JSON.parse(ev.data); es.close(); schedule(); api(`/api/runs/${run.id}/verify`).then(v => { run.verify = v; schedule(); }).catch(() => {}); });
+    es.addEventListener("error", ev => { if (ev.data) { run.error = JSON.parse(ev.data); es.close(); schedule(); } });
+    es.addEventListener("human", ev => { run.human = JSON.parse(ev.data); schedule(); });
+  }).catch(err => { run.error = err.message; schedule(); });
 }
+let raf = 0;
+function schedule() { if (!raf) raf = requestAnimationFrame(() => { raf = 0; renderRun(); setState(); }); }
 
-function renderView(e){
-  const el=document.getElementById(`v-${e.round}-${e.actor}`);if(!el)return;
-  const p=e.payload;el.innerHTML=`${p.options.length} options · current ${p.current_feasible_for_me?"legal":"<span class='err'>illegal</span>"} for me, u=${Number(p.current_my_utility).toFixed(2)}`;
+/* ------------------------------------------------------------------ negotiation: helpers */
+const parseKey = k => { const [slot_id, pilot_action, gate, crew_plan] = String(k).split("|"); return {slot_id, pilot_action, gate, crew_plan}; };
+const slotLabel = (s, id) => s?.atc?.slots?.find(x => x.id === id)?.label || id;
+const gateLabel = g => g === "REMOTE" ? "Remote stand" : g;
+function actionLabel(p, derived) {
+  const a = ACTION[p.pilot_action] || p.pilot_action;
+  return p.pilot_action === "HOLD" && derived?.hold_min ? `Hold ${derived.hold_min} min` : a;
 }
-
-// ---------------------------------------------------------------- decision
-function bars(util,label){
-  return `<div class="bars">${PARTIES.map(p=>`<span><span class="chip ${p}">${p}</span></span><div class="bar ${p}"><i style="width:${Math.round(100*util[p])}%"></i></div><span class="num">${Number(util[p]).toFixed(2)}</span>`).join("")}</div>`;
-}
-async function renderDecision(o){
-  state.outcome=o;const el=$("#decision");el.hidden=false;
-  const f=o.final,fb=o.fallback_code?`<div class="fb">${esc(o.fallback_code)} — ${esc(o.fallback_reason)}</div>`:"";
-  const src=o.decision_source==="CONSENSUS"?"Consensus":o.decision_source==="UNRESOLVED"?"Unresolved — no legal landing":"Fallback: deterministic solver";
-  const mc=o.model_calls||{};
-  el.innerHTML=`<h2>Decision · requires human approval</h2>
-  <div class="src">${src}</div>${fb}
-  <p style="margin:8px 0"><code>${esc(key(f.proposal))}</code> — slot ${esc(f.proposal.slot_id)} lands ${hhmm(f.derived.arrival_min)} (${f.derived.delay_vs_eta_min>=0?"+":""}${f.derived.delay_vs_eta_min} min vs ETA), ${esc(f.proposal.pilot_action)}, gate ${esc(f.proposal.gate)}, ${esc(f.proposal.crew_plan)}; ${f.derived.missed_pax} pax miss connections, next leg +${f.derived.next_leg_delay_min} min</p>
-  <div class="bars" style="margin-bottom:8px">
-    <span>system cost</span><div class="bar"><i style="width:${Math.min(100,Math.round(100*f.system_cost/Math.max(o.fifo.system_cost,1)))}%"></i></div><span class="num">${fmt(f.system_cost)}</span>
-    <span class="muted">FIFO</span><div class="bar"><i style="width:100%;opacity:.35"></i></div><span class="num muted">${fmt(o.fifo.system_cost)}</span>
-    <span class="muted">optimum</span><div class="bar"><i style="width:${Math.round(100*o.optimum.system_cost/Math.max(o.fifo.system_cost,1))}%;opacity:.35"></i></div><span class="num muted">${fmt(o.optimum.system_cost)}</span></div>
-  <div class="muted" style="margin-bottom:6px">utility of the decision, per party (1 = my cheapest legal option)</div>${bars(o.utilities.final)}
-  <p class="muted" style="margin:10px 0 0;font-size:12.5px">${o.rounds_used} round(s) in ${o.wall_s}s · counters ${o.counters_attempted} (infeasible caught ${o.infeasible_counters_caught}, non-concession ${o.non_concessions}, late ${o.late_counters}) · self-violations ${o.self_violations} · unfounded rejects ${o.unfounded_rejects} · abstains ${o.abstains}
-  ${mc.calls?` · ${mc.calls} model calls, ${fmt(mc.input_tokens)} in / ${fmt(mc.output_tokens)} out, ${mc.cache_read_input_tokens?fmt(mc.cache_read_input_tokens)+" cached":"no cache reads"}`:" · no model calls"}</p>
-  ${o.diversion_assessment?`<p class="fb">Diversion assessment (information, not a decision): alternate ${esc(o.diversion_assessment.alternate)}, ${o.diversion_assessment.divert_feasible?"feasible":"NOT feasible"}, ${o.diversion_assessment.divert_fuel_remaining_kg} kg on arrival</p>`:""}
-  <div class="human" id="human-ui"><button class="primary" id="approve" ${o.decision_source==="UNRESOLVED"?"disabled":""}>Approve</button>
-    <select id="override-sel"><option value="">override to…</option></select><button id="override" disabled>Override</button>
-    <textarea id="note" placeholder="note for the record"></textarea></div><div id="human-out"></div>`;
-  const opts=await (await fetch(`/api/runs/${state.runId}/options`)).json();
-  const sel=$("#override-sel");
-  for(const op of opts){const o2=document.createElement("option");o2.value=op.key;
-    o2.textContent=`${op.key} — cost ${fmt(op.system_cost)}${op.mutually_acceptable?" ✓":""} · u ${PARTIES.map(p=>op.utilities[p].toFixed(2)).join("/")}`;sel.appendChild(o2);}
-  const dv=document.createElement("option");dv.value="DIVERT";dv.textContent="DIVERT — hand off with diversion assessment";sel.appendChild(dv);
-  sel.onchange=()=>{$("#override").disabled=!sel.value;};
-  $("#approve").onclick=()=>decide({action:"approve",note:$("#note").value});
-  $("#override").onclick=()=>decide({action:"override",proposal_key:sel.value,note:$("#note").value});
-  $("#audit-md").href=`/api/runs/${state.runId}/audit.md`;$("#audit-json").href=`/api/runs/${state.runId}/audit.json`;
-  $("#audit-md").hidden=$("#audit-json").hidden=false;
-}
-async function decide(body){
-  const r=await fetch(`/api/runs/${state.runId}/decision`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
-  const d=await r.json();
-  if(!r.ok){const det=d.detail;$("#human-out").innerHTML=`<p class="err">${esc(typeof det==="string"?det:det.error)}${det.failing_rules?": "+det.failing_rules.map(v=>`<code>${esc(v.rule_id)}</code> ${esc(v.detail)}`).join("; "):""}</p>`;return;}
-  renderHuman(d);
-}
-function renderHuman(h){
-  state.human=h;$("#human-ui").hidden=true;
-  $("#human-out").innerHTML=`<p><span class="chip ok">${esc(h.action.toUpperCase())}</span> by ${esc(h.actor)}${h.proposal_key?` → <code>${esc(h.proposal_key)}</code>`:""}${h.delta_vs_negotiated!=null?` <span class="muted">(${h.delta_vs_negotiated>=0?"+":""}${fmt(h.delta_vs_negotiated)} vs negotiated)</span>`:""}
-    <br><span class="muted">ledger seq ${h.seq}, hash <code>${esc(h.hash.slice(0,16))}…</code>${h.note?" — "+esc(h.note):""}</span></p>`;
-}
-
-// ---------------------------------------------------------------- ledger + events
-function renderEntry(e){
-  state.entries.push(e);$("#ledger-card").hidden=false;$("#ledger-n").textContent=`${state.entries.length} entries`;
-  const tr=document.createElement("tr");
-  tr.innerHTML=`<td class="num">${e.seq}</td><td class="num">${e.round}</td><td>${esc(e.actor)}</td><td>${esc(e.type)}</td><td class="mono muted">${e.hash.slice(0,10)}</td>`;
-  const body=$("#ledger-body");body.appendChild(tr);body.parentElement.parentElement.scrollTop=1e9;
-}
-function onEntry(e){
-  renderEntry(e);const p=e.payload;
-  switch(e.type){
-    case "SCENARIO":renderSpace(p);break;
-    case "PROPOSAL":state.current=p.on_table;state.onTable=key(p.on_table.proposal);renderRules(p.on_table);break;
-    case "ROUND_START":state.onTable=p.on_table;roundEl(e.round,p.final_round,p.on_table);break;
-    case "VIEW":renderView(e);break;
-    case "MESSAGE":renderMessage(e);break;
-    case "ABSTAIN":renderAbstain(e);break;
-    case "ROUND_END":renderRoundEnd(e);break;
-    case "HUMAN_DECISION":break;
-    case "DECISION":case "NO_ACCEPTABLE_OPTION":case "NO_FEASIBLE_LANDING":break;
-    default:if(RULING_TEXT[e.type])renderRuling(e);
+const chipsFor = (s, p, derived, prev, cls) => {
+  const f = [["slot_id", slotLabel(s, p.slot_id)], ["pilot_action", actionLabel(p, derived)], ["gate", gateLabel(p.gate)]];
+  return f.map(([k, v]) => `<span class="${prev && prev[k] !== p[k] ? cls || "new" : ""}">${esc(v)}</span>`).join("");
+};
+function roundsFromLedger() {
+  const rounds = {};
+  const R = r => rounds[r] ??= {n: r, views: {}, msgs: {}, rulings: {}, end: null, start: null};
+  for (const e of run.entries) {
+    if (e.type === "ROUND_START") R(e.round).start = e;
+    else if (e.type === "VIEW") R(e.round).views[e.actor] = e.payload;
+    else if (e.type === "MESSAGE") R(e.round).msgs[e.actor] = {kind: "msg", ...e.payload.message, raw: e.payload.raw};
+    else if (e.type === "ABSTAIN") R(e.round).msgs[e.actor] = {kind: "abstain", reason: e.payload.reason};
+    else if (e.type === "ROUND_END") R(e.round).end = e.payload;
+    else if (e.actor === "ORCHESTRATOR" && e.payload?.agent) R(e.round).rulings[e.payload.agent] = {type: e.type, ...e.payload};
   }
+  return Object.values(rounds).sort((a, b) => a.n - b.n);
 }
-function connect(runId){
-  const es=new EventSource(`/api/runs/${runId}/events`);state.es=es;
-  es.addEventListener("scenario",ev=>renderScenario(JSON.parse(ev.data)));
-  es.addEventListener("ledger",ev=>onEntry(JSON.parse(ev.data)));
-  es.addEventListener("done",ev=>{renderDecision(JSON.parse(ev.data));setStatus("done — awaiting human decision","");es.close();$("#go").disabled=false;});
-  es.addEventListener("error",ev=>{if(ev.data){$("#error").hidden=false;$("#error").textContent=ev.data;setStatus("error","err");}es.close();$("#go").disabled=false;});
-  es.addEventListener("human",ev=>renderHuman(JSON.parse(ev.data)));
+const proposals = () => run.entries.filter(e => e.type === "PROPOSAL");
+const onTableFor = r => { const ps = proposals().filter(p => p.round <= r - 1); return ps[ps.length - 1]?.payload; };
+
+/* ------------------------------------------------------------------ negotiation: tiles */
+function ticketTile(s, sc) {
+  const f = s.flight, prov = s.provenance || {};
+  const syn = prov["pilot.pax_total"] === "synthetic" ? `<span class="syn">synthetic</span>` : "";
+  return `<section class="ticket" aria-label="Disrupted flight">
+    <div class="row1"><span><b>${esc(f.airline)}${f.number}</b>${esc(f.airline_name.replace(/ Inc\.$/, ""))}, ${esc(dateStr(f.date))}</span>${tipHTML("Real flight", "From the 2015 US DOT on-time data. Anything generated is tagged <b>synthetic</b>.", "tag")}</div>
+    <div class="route"><div class="ap"><b>${esc(f.origin)}</b><span>${esc(CITY[f.origin] || "")}</span></div><div class="path"><svg viewBox="0 0 24 24"><use href="#jet"/></svg></div><div class="ap"><b>${esc(f.dest)}</b><span>${esc(CITY[f.dest] || "")}</span></div></div>
+    <div class="fields">
+      <div><small>Scheduled</small><b>${esc(f.sched_arr)}</b></div>
+      <div><small>New ETA</small><b>${hhmm(s.pilot.eta_min)}</b><i>+${f.departure_delay_min} min</i></div>
+      <div><small>Cause</small><b>${s.disruption.trigger === "WEATHER" ? "Weather" : "Late aircraft"}</b></div>
+      <div><small>${esc(f.dest)} capacity</small><b>${s.atc.effective_aar_per_15} / 15 min</b><i>normally ${s.atc.nominal_aar_per_15}</i></div>
+      <div><small>Aboard</small><b>${s.pilot.pax_total}${syn}</b></div>
+    </div></section>`;
 }
-$("#start").addEventListener("submit",async ev=>{
-  ev.preventDefault();reset();const fd=new FormData(ev.target);
-  const body={mode:fd.get("mode"),seed:fd.get("seed")?Number(fd.get("seed")):null,model:fd.get("model")||null};
-  $("#go").disabled=true;setStatus("starting…","live");
-  const r=await fetch("/api/runs",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
-  if(!r.ok){const d=await r.json();$("#error").hidden=false;$("#error").textContent=JSON.stringify(d.detail);setStatus("error","err");$("#go").disabled=false;return;}
-  const d=await r.json();state.runId=d.run_id;setStatus(`negotiating ${d.scenario_id} (seed ${d.seed})`,"live");connect(d.run_id);
-  history.replaceState(null,"",`?run=${d.run_id}`);
+function verdictTile() {
+  const o = run.outcome;
+  if (run.error) return `<section class="verdict"><div class="head">${no(16)}<div><h1>Run failed</h1><div class="sub err">${esc(run.error)}</div></div></div><button type="button" class="pill" data-goto="setup">Back to set up</button></section>`;
+  if (!o) return `<section class="verdict"><div class="head"><span class="spin"></span><div><h1>${run.round ? `Round ${run.round}` : "Starting"}</h1><div class="sub">The agents are negotiating</div></div></div>
+    <div class="nums"><div><b class="flat">—</b><span>cost vs first come</span></div><div><b class="flat">—</b><span>kg of fuel</span></div></div></section>`;
+  const saving = o.saving_vs_fifo || 0;
+  const fuel = o.final && o.fifo ? o.final.derived.fuel_used_kg - o.fifo.derived.fuel_used_kg : 0;
+  let icon = ok(16), title = `Agreed in round ${o.rounds_used}`, sub = o.gap_vs_optimum <= 0.5 ? "Best possible plan" : `${n0(o.gap_vs_optimum)} above the best plan`;
+  if (o.decision_source === "FALLBACK_SOLVER") { icon = warn(16); title = "Solver decided"; sub = fallbackText(o); }
+  if (o.decision_source === "UNRESOLVED") { icon = no(16); title = "No legal landing"; sub = "Handed to you with a diversion assessment"; }
+  const costNum = `<b class="${saving > 0 ? "" : "flat"}">${saving > 0 ? "−" + n0(saving) : "0"}</b>`;
+  const fuelNum = `<b class="${fuel < 0 ? "" : "flat"}">${fuel < 0 ? "−" + n0(-fuel) : (fuel > 0 ? "+" + n0(fuel) : "0")}</b>`;
+  return `<section class="verdict">
+    <div class="head">${icon}<div><h1>${title}</h1><div class="sub">${esc(sub)}</div></div></div>
+    ${o.final && o.decision_source !== "UNRESOLVED" ? `<div class="nums">
+      <div class="tip" tabindex="0">${costNum}<span>cost vs first come</span><span class="bubble">${n0(o.final.system_cost)} against ${n0(o.fifo.system_cost)} for first come, first served. The solver's optimum is ${n0(o.optimum.system_cost)}.</span></div>
+      <div>${fuelNum}<span>kg of fuel</span></div></div>` : ""}
+    <a class="pill solid" href="#decide">${run.human ? "See your decision" : o.decision_source === "UNRESOLVED" ? "See your options" : "Review and approve"}</a></section>`;
+}
+function fallbackText(o) {
+  return {NO_CONSENSUS_ROUND_CAP: "No agreement after the last round", NO_ACCEPTABLE_OPTION: "No plan cleared everyone's threshold",
+          AGENT_ABSTAINED: "An agent gave no valid answer twice", AGENT_ERROR: "An agent failed twice",
+          NO_FEASIBLE_LANDING: "No legal landing option"}[o.fallback_code] || o.fallback_reason || "Fallback";
+}
+function convTile(s) {
+  const ps = proposals();
+  if (!ps.length && run.outcome?.decision_source === "UNRESOLVED") {
+    const by = run.outcome.diversion_assessment?.landing_options_failed_by_rule || {};
+    return `<section class="conv"><header><h2>Nothing to negotiate</h2>${tipHTML("i", "Every landing option breaks at least one hard rule, so the agents are never asked. Code does not let them trade safety margins away.", "info")}</header>
+      <p style="color:var(--t2);margin:14px 0 16px">Every landing option breaks a hard rule. Options ruled out by each rule:</p>
+      <div class="rules">${Object.entries(by).sort((a, b) => b[1] - a[1]).map(([id, n]) => `<span class="rid tip" tabindex="0">${esc((RULE[id] || [id])[0])} ${n}<span class="bubble"><b>${esc(id)}.</b> ${esc((RULE[id] || [id, id])[1])}.</span></span>`).join("")}</div></section>`;
+  }
+  if (!ps.length) return `<section class="conv"><header><h2>How they converged</h2></header><p style="color:var(--t2);margin:18px 0 0">Waiting for the first plan</p></section>`;
+  const o = run.outcome;
+  const stages = ps.map((e, i) => ({kind: i === 0 ? "fifo" : "round", round: e.round, util: e.payload.utilities, ev: e.payload.on_table, src: e.payload.source}));
+  if (o && o.final && o.decision_source !== "UNRESOLVED") {
+    const kind = o.decision_source === "CONSENSUS" ? "final" : "solver";
+    stages.push({kind, round: o.rounds_used, util: o.utilities.final, ev: o.final});
+  }
+  const W = 1200, H = 190, top = 24, bot = 150;
+  const all = stages.flatMap(st => PARTIES.map(p => st.util?.[p] ?? 1));
+  const lo = Math.min(0.7, Math.floor(Math.min(...all) * 10) / 10);
+  const ticks = []; for (let v = 1; v >= lo - 1e-9; v -= 0.1) ticks.push(Math.round(v * 10) / 10);
+  const y = u => top + (1 - u) / (1 - lo) * (bot - top);
+  const xs = stages.map((_, i) => W * (i + 0.5) / stages.length);
+  const lines = ["GROUND", "ATC", "PILOT"].map(p => `<polyline points="${stages.map((st, i) => `${xs[i].toFixed(1)},${y(st.util?.[p] ?? 1).toFixed(1)}`).join(" ")}" stroke="${PCOL[p]}"/>`).join("");
+  const first = stages[0];
+  const dots = PARTIES.map(p => `<circle cx="${xs[0]}" cy="${y(first.util[p]).toFixed(1)}" r="5" fill="${PCOL[p]}"/>`).join("");
+  const labels = PARTIES.map(p => `<text x="${xs[0] - 14}" y="${(y(first.util[p]) + 4).toFixed(1)}" fill="${PCOL[p]}">${first.util[p].toFixed(2)}</text>`).join("");
+  const mids = stages.slice(1, o && o.final ? -1 : undefined).map((st, i) => `<circle cx="${xs[i + 1]}" cy="${y(Math.max(...PARTIES.map(p => st.util[p]))).toFixed(1)}" r="6" fill="#000" stroke="#F2F2F2" stroke-width="2"/>`).join("");
+  let end = "";
+  if (o && o.final && o.decision_source !== "UNRESOLVED") {
+    end += PARTIES.map(p => `<circle cx="${xs[xs.length - 1]}" cy="${y(o.utilities.final[p]).toFixed(1)}" r="5" fill="${PCOL[p]}"/>`).join("");
+    const xe = xs[xs.length - 1], ye = y(Math.max(...PARTIES.map(p => o.utilities.final[p])));
+    end += o.decision_source === "CONSENSUS"
+      ? `<circle cx="${xe}" cy="${ye}" r="13" fill="#30D158" filter="url(#glow)"/><path d="M${xe - 6} ${ye + .4}l4 4 7-7.5" stroke="#000" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`
+      : `<circle cx="${xe}" cy="${ye}" r="13" fill="#D9B36C" filter="url(#glow)"/><path d="M${xe} ${ye - 5}v5" stroke="#000" stroke-width="2.6" stroke-linecap="round"/><circle cx="${xe}" cy="${ye + 5}" r="1.4" fill="#000"/>`;
+  }
+  const grid = ticks.map(t => `<line x1="0" y1="${y(t).toFixed(1)}" x2="${W}" y2="${y(t).toFixed(1)}"/>`).join("");
+  const glabels = ticks.map(t => `<text x="4" y="${(y(t) - 4).toFixed(1)}">${t.toFixed(1)}</text>`).join("");
+  // stage captions
+  let prevP = null, prevCost = null;
+  const wins = winnersByRound();
+  const cap = stages.map((st, i) => {
+    const p = st.ev?.proposal, d = st.ev?.derived;
+    let h = st.kind === "fifo" ? "First come, first served" : st.kind === "round" ? `Round ${st.round}` : st.kind === "final" ? `Round ${st.round}` : "Solver";
+    const who = st.kind === "round" ? wins[st.round] : null;
+    const chips = p ? chipsFor(s, p, d, i ? prevP : null, st.kind === "round" ? "new" : "") : "";
+    const cost = st.ev?.system_cost;
+    let costHTML = cost != null ? n0(cost) : "";
+    if (st.kind === "round" && prevCost != null && Math.abs(cost - prevCost) > .5) costHTML += `<em class="${cost > prevCost ? "up" : ""}">${minus(cost - prevCost)}</em>`;
+    if ((st.kind === "final" || st.kind === "solver") && o && Math.abs(o.final.system_cost - o.optimum.system_cost) <= .5) costHTML += `<small>best possible</small>`;
+    prevP = p; prevCost = cost;
+    return `<div class="${st.kind === "final" ? "final" : st.kind === "solver" ? "solver" : ""}" style="${who ? `--c:${PCOL[who]}` : ""}"><h4>${h}</h4><div class="chips">${chips}</div><div class="cost">${costHTML}</div></div>`;
+  }).join("");
+  return `<section class="conv" aria-label="How they reached consensus">
+    <header><h2>How they converged</h2>${tipHTML("i", "Each agent's satisfaction with the plan on the table. 1 is its cheapest legal option.", "info")}
+      <div class="key"><span><i style="background:var(--atc)"></i>ATC</span><span><i style="background:var(--pilot)"></i>Pilot</span><span><i style="background:var(--ground)"></i>Ground</span></div></header>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Each agent's satisfaction with the plan on the table, by round">
+      <defs><filter id="glow" x="-20%" y="-50%" width="140%" height="200%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <g stroke="#1C1C1C">${grid}</g>
+      <g fill="#636363" font-size="11" font-family="Host Grotesk,sans-serif">${glabels}</g>
+      <g filter="url(#glow)" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${lines}</g>
+      ${dots}${mids}${end}
+      <g font-size="13" font-family="Host Grotesk,sans-serif" text-anchor="end">${labels}</g>
+    </svg>
+    <div class="stages" style="grid-template-columns:repeat(${stages.length},minmax(0,1fr))">${cap}</div></section>`;
+}
+function winnersByRound() {
+  const out = {};
+  for (const e of proposals()) {
+    if (e.round < 1) continue;
+    const key = [e.payload.on_table.proposal.slot_id, e.payload.on_table.proposal.pilot_action, e.payload.on_table.proposal.gate, e.payload.on_table.proposal.crew_plan].join("|");
+    const c = run.entries.find(x => x.type === "COUNTER_OK" && x.round === e.round && [x.payload.proposal.slot_id, x.payload.proposal.pilot_action, x.payload.proposal.gate, x.payload.proposal.crew_plan].join("|") === key);
+    if (c) out[e.round] = c.payload.agent;
+  }
+  return out;
+}
+function agentTiles(s) {
+  const conn = (s.pilot.connections || []).reduce((a, c) => a + c.pax, 0);
+  const duty = s.ground.crew_duty_end_min;
+  const tiles = {
+    ATC: [[s.atc.effective_aar_per_15, "arrivals / 15 min"], [(s.bank || []).length, "in the bank"], [`${s.atc.max_hold_min} min`, "max hold"]],
+    PILOT: [[n0(s.pilot.fuel.fuel_on_board_kg), "kg fuel"], [s.pilot.pax_total, "passengers"], [conn, "connecting"]],
+    GROUND: [[s.ground.gates.length, "gates"], [`${s.ground.min_turnaround_min} min`, "min turn"], [hhmm(duty), duty < s.now_min ? "crew duty ended" : "crew duty ends"]]};
+  const sub = {ATC: "Approach control", PILOT: "Flight deck and ops", GROUND: "Stands and crew"};
+  const icon = {ATC: "tower", PILOT: "plane", GROUND: "cone"};
+  return PARTIES.map((p, i) => `<section class="agent ${PCLS[p]}"><div class="who"><span class="ico"><svg width="20" height="20"><use href="#${icon[p]}"/></svg></span><div><h3>${PNAME[p]}</h3><small>${sub[p]}</small></div>${i === 0 ? tipHTML("Private", "Only this agent sees these numbers. Others see its decisions and the rules it cites.", "lock") : `<span class="lock">Private</span>`}</div>
+    <div class="sees">${tiles[p].map(([v, l]) => `<div><b>${esc(v)}</b><span>${esc(l)}</span></div>`).join("")}</div></section>`).join("");
+}
+function ruleChips(rules, neutral) {
+  return (rules || []).map(r => {
+    const id = r.rule_id || r, m = RULE[id] || [id, id];
+    const detail = r.detail ? `${esc(r.detail)}.` : "";
+    return `<span class="rid ${neutral ? "neutral" : ""} tip" tabindex="0">${esc(m[0])}<span class="bubble"><b>${esc(id)}.</b> ${esc(m[1])}. ${detail}</span></span>`;
+  }).join("");
+}
+function msgTile(s, rd, p, onTable, isConsensusRound) {
+  const m = rd.msgs[p], rl = rd.rulings[p];
+  const cls = PCLS[p];
+  const key = `${rd.n}-${p}`;
+  if (!m) return `<article class="msg ${cls} wait"><div class="top"><b>${PNAME[p]}</b>thinking</div></article>`;
+  if (m.kind === "abstain") return `<article class="msg ${cls}"><div class="top"><b>${PNAME[p]}</b>gave no answer</div>
+    <div class="verdictline bad">${no(13)}Abstained</div>
+    <div class="foot"><details class="more" data-k="${key}" ${run.open.has(key) ? "open" : ""}><summary>What happened</summary><div class="body"><small>${esc(String(m.reason || "").split("\n")[0].slice(0, 300))}</small></div></details></div></article>`;
+  const verb = {ACCEPT: "accepts", COUNTER: "counters", REJECT: "rejects"}[m.decision] || m.decision.toLowerCase();
+  const conf = Math.round((m.confidence ?? 0) * 100);
+  const ring = `<span class="ring tip" style="--p:${conf}" tabindex="0"><em>${conf}</em><span class="bubble">The agent's own reported confidence, ${conf}%. Not a measured score.</span></span>`;
+  let change = "";
+  const tp = onTable?.on_table?.proposal, td = onTable?.on_table?.derived;
+  const bad = rl?.type === "INFEASIBLE_COUNTER" ? new Set(rl.failing_rules.map(r => OWNER(r.rule_id) === "ATC" ? "slot_id" : OWNER(r.rule_id) === "PILOT" ? "pilot_action" : "gate")) : new Set();
+  if (m.decision === "COUNTER" && m.proposal && tp) {
+    const parts = [];
+    const fields = [["slot_id", v => slotLabel(s, v)], ["pilot_action", (v, d) => (v === "HOLD" && d?.hold_min ? `Hold ${d.hold_min} min` : ACTION[v] || v)], ["gate", gateLabel], ["crew_plan", v => CREW[v] || v]];
+    for (const [k, fmt] of fields) if (m.proposal[k] !== tp[k]) parts.push(`<span class="cg"><s>${esc(fmt(tp[k], td))}</s><span class="ar">→</span><span class="${bad.has(k) ? "bad" : ""}">${esc(fmt(m.proposal[k]))}</span></span>`);
+    change = `<div class="change">${parts.slice(0, 2).join("") || "Same plan"}</div>`;
+  } else if (m.decision === "ACCEPT" && !isConsensusRound) change = `<div class="change">Plan on the table</div>`;
+  else if (m.decision === "REJECT") change = `<div class="change">Votes against</div>`;
+  let vl = "";
+  const t = rl?.type;
+  if (t === "ACCEPT_OK") vl = `<div class="verdictline">${ok(13)}${isConsensusRound ? "Accepted" : `Passes every ${PNAME[p]} rule`}</div>`;
+  else if (t === "COUNTER_OK") vl = `<div class="verdictline">${ok(13)}Legal for all three</div>`;
+  else if (t === "INFEASIBLE_COUNTER") vl = `<div class="verdictline bad">${no(13)}Rejected by code${ruleChips(rl.failing_rules)}</div>`;
+  else if (t === "SELF_VIOLATION") vl = `<div class="verdictline bad">${no(13)}Refused, breaks its own rules${ruleChips(rl.failing_rules)}</div>`;
+  else if (t === "NON_CONCESSION") vl = `<div class="verdictline warn">${warn(13)}Discarded, not a concession</div>`;
+  else if (t === "LATE_COUNTER") vl = `<div class="verdictline grey">Final round, counter ignored</div>`;
+  else if (t === "REJECT_OK") vl = `<div class="verdictline">${ok(13)}Rejection backed by a rule${ruleChips(m.rejected_rule_ids, true)}</div>`;
+  else if (t === "UNFOUNDED_REJECT") vl = `<div class="verdictline warn">${warn(13)}Cited rules the plan passes</div>`;
+  else if (t === "REJECT_PREFERENCE") vl = `<div class="verdictline grey">Against, on preference</div>`;
+  let note = "";
+  if (t === "INFEASIBLE_COUNTER") {
+    const others = [...new Set(rl.failing_rules.map(r => OWNER(r.rule_id)).filter(o => o && o !== p))];
+    if (others.length) note = `<small>${esc(PNAME[p])} can't see ${others.map(o => PNAME[o]).join(" or ")}'s data. Code can.</small>`;
+  }
+  const gives = (m.concessions || []).length ? `<small>Gives up: ${esc(m.concessions.join("; "))}</small>` : "";
+  const body = (m.rationale || gives || note) ? `<div class="body">${esc(m.rationale || "")}${note}${gives}</div>` : "";
+  return `<article class="msg ${cls}"><div class="top"><b>${PNAME[p]}</b>${verb}${ring}</div>${change}${vl}
+    <div class="foot"><details class="more" data-k="${key}" ${run.open.has(key) ? "open" : ""}><summary>Reasoning</summary>${body}</details></div></article>`;
+}
+function betweenRow(s, rd, nextP) {
+  const wins = winnersByRound();
+  const w = wins[rd.n];
+  if (w && nextP) {
+    const np = nextP.payload.on_table.proposal, tp = onTableFor(rd.n)?.on_table?.proposal || {};
+    const fmt = {slot_id: v => slotLabel(s, v), pilot_action: v => ACTION[v] || v, gate: gateLabel, crew_plan: v => CREW[v] || v};
+    const changed = Object.keys(fmt).filter(k => np[k] !== tp[k]).map(k => `<span class="new" style="--c:${PCOL[w]}">${esc(fmt[k](np[k]))}</span>`).join("");
+    return `<div class="between">${PNAME[w]}'s plan wins the round<div class="chips">${changed}</div>${tipHTML("i", "Code picks the cheapest legal counter. The agents don't vote on it.", "info")}</div>`;
+  }
+  return `<div class="between">No legal counter this round. The plan stays on the table.</div>`;
+}
+function endRow(o) {
+  if (o.decision_source === "CONSENSUS") return `<div class="consensus">${ok(16)}Consensus. No solver needed.</div>`;
+  if (o.decision_source === "UNRESOLVED") return `<div class="consensus unresolved">${no(16)}<div>No legal landing. Handed to you.<small>Diversion assessed, never ordered by the system.</small></div></div>`;
+  return `<div class="consensus fallback">${warn(16)}<div>Solver decided.<small>${esc(fallbackText(o))}. The solver's best legal plan is used.</small></div></div>`;
+}
+function decideTile() {
+  const o = run.outcome;
+  if (!o) return `<section class="decide"><h2>Your call</h2><p style="color:var(--t2);margin:0">Available when the agents finish.</p></section>`;
+  const fin = o.final, fifo = o.fifo, opt = o.optimum;
+  const max = Math.max(fifo?.system_cost || 0, fin?.system_cost || 0, opt?.system_cost || 0) || 1;
+  const fuelTxt = ev => `${n0(ev.derived.fuel_used_kg)} kg extra fuel`;
+  const same = fin && opt && JSON.stringify(fin.proposal) === JSON.stringify(opt.proposal);
+  const optTile = (h, ev, pick, f) => ev ? `<div class="opt ${pick ? "pick" : ""}"><h4>${h}</h4><div class="n">${n0(ev.system_cost)}</div><div class="bar"><i style="width:${(ev.system_cost / max * 100).toFixed(1)}%"></i></div><div class="f">${f}</div></div>` : "";
+  const agreedLabel = o.decision_source === "CONSENSUS" ? "Agreed" : o.decision_source === "FALLBACK_SOLVER" ? "Solver" : "No legal plan";
+  let actions;
+  if (run.human) {
+    const h = run.human;
+    actions = `<div class="done-note">${ok(13)}${h.action === "approve" ? "Approved" : h.proposal_key === "DIVERT" ? "Diversion recorded" : "Overridden"}<small>by ${esc(h.actor)}, ledger entry ${h.seq}</small></div>`;
+  } else if (run.choosing) {
+    const opts = (run.options || []).map(x => `<option value="${esc(x.key)}">${esc(slotLabel(run.scn.scenario, x.proposal.slot_id))}, ${esc(ACTION[x.proposal.pilot_action] || x.proposal.pilot_action)}, ${esc(gateLabel(x.proposal.gate))}, ${esc(CREW[x.proposal.crew_plan])} (${n0(x.system_cost)})</option>`).join("");
+    const divert = o.decision_source === "UNRESOLVED" ? `<option value="DIVERT">Divert to ${esc(o.diversion_assessment?.alternate || "the alternate")}</option>` : "";
+    actions = `<div class="actions"><select id="override-sel" aria-label="Legal plans">${divert}${opts}</select><button type="button" class="pill solid" id="override-go">Override</button><button type="button" class="pill" id="override-cancel">Cancel</button></div>`;
+  } else {
+    actions = `<div class="actions"><button type="button" class="pill solid" id="approve" ${o.decision_source === "UNRESOLVED" ? "disabled" : ""}>Approve</button><button type="button" class="pill" id="choose">${o.decision_source === "UNRESOLVED" ? "Record a diversion" : "Choose another plan"}</button><span class="sep"></span><span class="lbl">Stress test</span>${Object.entries(STRESS).map(([k, v]) => `<button type="button" class="pill small" data-rerun="${k}">${v.label}</button>`).join("")}</div>`;
+  }
+  if (o.decision_source === "UNRESOLVED") {
+    const da = o.diversion_assessment || {};
+    return `<section class="decide"><h2>Your call</h2>
+      <div class="opts" style="grid-template-columns:1fr 1fr"><div class="opt"><h4>Legal landing options</h4><div class="n">0</div><div class="f">Every option breaks a hard rule</div></div>
+        <div class="opt pick"><h4>Diversion to ${esc(da.alternate || "the alternate")}</h4><div class="n">${da.alternate_nm != null ? `${n0(da.alternate_nm)} nm` : "—"}</div><div class="f">${da.divert_feasible ? `Lands with ${n0(da.divert_fuel_remaining_kg)} kg of fuel` : "Not feasible either"}. A simulation, not a suitability check.</div></div></div>
+      ${actions}${run.msg ? `<div class="err">${esc(run.msg)}</div>` : ""}</section>`;
+  }
+  return `<section class="decide"><h2>Your call</h2>
+    <div class="opts">${optTile("First come", fifo, false, fifo ? fuelTxt(fifo) : "")}${optTile(agreedLabel, fin, true, fin ? fuelTxt(fin) : "")}${optTile("Best possible", opt, false, same ? "Same plan" : opt ? fuelTxt(opt) : "")}</div>
+    ${actions}${run.msg ? `<div class="err">${esc(run.msg)}</div>` : ""}</section>`;
+}
+function briefTile() {
+  const o = run.outcome;
+  const row = (name, w, ev, good = true) => `<li>${good ? ok(12) : warn(12)}<span>${name}<small>${w}</small></span><span class="ev">${ev}</span></li>`;
+  if (!o) return `<section class="brief" aria-label="Against the brief"><h2>Against the brief</h2><ul>${["Realism", "Soundness", "Evaluation", "Traceability", "Impact", "Time"].map(n => `<li><span class="info">·</span><span>${n}</span><span class="ev">—</span></li>`).join("")}</ul></section>`;
+  const caught = (o.infeasible_counters_caught || 0) + (o.self_violations || 0);
+  const landed = o.final && o.decision_source !== "UNRESOLVED";
+  const fuel = landed ? o.final.derived.fuel_used_kg - o.fifo.derived.fuel_used_kg : 0;
+  const usd = Object.values(o.agent_meta || {}).reduce((a, m) => a + (m.usd || 0), 0);
+  const ver = run.verify;
+  const legal = o.final && Object.values(o.final.verdicts || {}).flat().every(v => v.ok);
+  return `<section class="brief" aria-label="Against the brief"><h2>Against the brief</h2><ul>
+    ${row("Realism", "20%", `<b>Real</b> flight`)}
+    ${row("Soundness", "25%", `<b>${caught}</b> illegal plan${caught === 1 ? "" : "s"} caught`, o.decision_source === "UNRESOLVED" || legal)}
+    ${row("Evaluation", "20%", landed ? `<b>${n0(o.gap_vs_optimum)}</b> gap to optimum` : "no legal plan")}
+    ${row("Traceability", "20%", ver ? tipHTML(`<b>${ver.entries}</b> entries ${ver.ok ? "verified" : "broken"}`, `Hash-chained ledger, head ${esc((ver.head || "").slice(0, 16))}. ${ver.anchored ? "Checked against its head anchor." : ""}`) : "checking", !ver || ver.ok)}
+    ${row("Impact", "10%", landed ? `<b>${Math.abs(fuel) < .5 ? "0" : fuel < 0 ? "−" + n0(-fuel) : "+" + n0(fuel)}</b> kg fuel` : "diversion assessed")}
+    ${row("Time", "5%", `<b>${o.wall_s.toFixed(1)} s</b>${usd > 0 ? ` for $${usd.toFixed(2)}` : ", no model calls"}`)}
+  </ul></section>`;
+}
+
+/* ------------------------------------------------------------------ negotiation: board */
+function renderRun() {
+  const board = $("#run-board");
+  if (!run.req) return;
+  board.querySelectorAll("details.more").forEach(d => { if (d.open) run.open.add(d.dataset.k); else run.open.delete(d.dataset.k); });
+  if (!run.scn) {
+    board.innerHTML = `<div class="side lit">Flight</div><div class="empty" style="grid-column:span 3">${run.error ? `${no(14)}<div><b>Could not start</b><span class="err">${esc(run.error)}</span></div><button type="button" class="pill" data-goto="setup">Back to set up</button>` : `<span class="spin"></span><div><b>Loading the flight</b>Building the scenario from the 2015 data</div>`}</div>`;
+    return;
+  }
+  const s = run.scn.scenario;
+  const rounds = roundsFromLedger();
+  const o = run.outcome;
+  let html = `<div class="side lit">Flight</div>${ticketTile(s, run.scn)}${verdictTile()}
+    <div class="side">Consensus</div>${convTile(s)}
+    <div class="side">Agents</div>${agentTiles(s)}`;
+  rounds.forEach((rd, i) => {
+    const isLast = i === rounds.length - 1;
+    const consensusHere = rd.end?.consensus;
+    const onTable = onTableFor(rd.n);
+    const tail = !rd.end ? "" : (isLast && o) ? endRow(o) : consensusHere ? "" : betweenRow(s, rd, proposals().find(e => e.round === rd.n));
+    html += `<div class="side lit" style="grid-row:span ${tail ? 2 : 1}">Round ${rd.n}</div>`;
+    html += PARTIES.map(p => msgTile(s, rd, p, onTable, consensusHere)).join("");
+    html += tail;
+  });
+  if (o && !rounds.length) html += `<div class="side lit">Result</div>${endRow(o)}`;
+  html += `<div class="side lit" id="decide">You</div>${decideTile()}${briefTile()}`;
+  board.innerHTML = html;
+  const models = o ? [...new Set(Object.values(o.agent_meta || {}).map(m => m.model || (m.policy ? `scripted (${m.policy})` : "")).filter(Boolean))] : [];
+  $("#run-note").textContent = o ? `Agents: ${models.join(", ") || "unknown"}. Every step is in a hash-chained ledger.` : "Every step is in a hash-chained ledger.";
+}
+$("#run-board").addEventListener("toggle", e => { const d = e.target; if (d.matches?.("details.more")) { if (d.open) run.open.add(d.dataset.k); else run.open.delete(d.dataset.k); } }, true);
+$("#run-board").addEventListener("click", async e => {
+  const t = e.target.closest("button,a");
+  if (!t) return;
+  if (t.matches('a[href="#decide"]')) { e.preventDefault(); $("#decide")?.scrollIntoView({behavior: "smooth"}); return; }
+  if (t.id === "approve") return decide({action: "approve"});
+  if (t.id === "choose") { run.msg = ""; if (!run.options) { try { run.options = await api(`/api/runs/${run.id}/options`); } catch (err) { run.msg = err.message; } } run.choosing = true; return renderRun(); }
+  if (t.id === "override-cancel") { run.choosing = false; return renderRun(); }
+  if (t.id === "override-go") return decide({action: "override", proposal_key: $("#override-sel").value});
+  if (t.dataset.rerun) {
+    const k = STRESS[t.dataset.rerun];
+    return startRun({seed: k.seed ?? run.req.seed ?? run.scn?.scenario?.seed ?? null, mode: k.mode || run.req.mode});
+  }
 });
-$("#verify").addEventListener("click",async()=>{
-  const v=await (await fetch(`/api/runs/${state.runId}/verify`)).json();
-  $("#verify-out").innerHTML=v.ok?`<span class="chip ok">VERIFIED</span> ${v.entries} entries`:`<span class="chip bad">BROKEN</span> at seq ${v.first_bad_seq}: ${esc(v.reason)}`;
-});
-
-// ---------------------------------------------------------------- eval tab
-document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{
-  document.querySelectorAll(".tabs button").forEach(x=>x.setAttribute("aria-selected",x===b));
-  $("#tab-run").hidden=b.dataset.tab!=="run";$("#tab-eval").hidden=b.dataset.tab!=="eval";if(b.dataset.tab==="eval")loadEval();});
-async function loadEval(){
-  const r=await fetch("/api/eval");const t=$("#eval-table");
-  if(!r.ok){t.innerHTML=`<tr><td class="muted">no evaluation yet — run <code>triad eval</code></td></tr>`;return;}
-  const d=await r.json();$("#eval-tag").textContent=d.tag;$("#eval-config-pre").textContent=JSON.stringify(d.config||{},null,1);
-  const cols=[["n","n",v=>v],["consensus_rate","consensus",pct],["consensus_rate_given_acceptable_option","consensus | acceptable exists",pct],
-    ["final_feasible_rate","final legal",pct],["share_at_optimum","at optimum",pct],["gap_vs_optimum_mean","gap vs opt",f0],["saving_vs_fifo_mean","saving vs FIFO",f0],
-    ["min_utility_mean","min utility",f2],["counters_attempted","counters",v=>v],["infeasible_counters_caught","infeasible caught",v=>v],["self_violations","self-viol.",v=>v],
-    ["unfounded_rejects","unfounded rej.",v=>v],["late_counters","late",v=>v],["abstains","abstains",v=>v],["wall_s_mean","s/run",f2],
-    ["model_calls_mean","calls/run",f2],["tokens_mean","tokens in/out",v=>v?`${f0(v.input)}/${f0(v.output)}`:"—"],["usd_mean","$/run",v=>Number(v).toFixed(4)]];
-  const arms=d.arms||{};
-  t.innerHTML=`<thead><tr><th>arm</th>${cols.map(([,l])=>`<th class="num">${l}</th>`).join("")}</tr></thead><tbody>${Object.entries(arms).map(([a,s])=>
-    `<tr><td><b>${esc(a)}</b>${s.model?`<br><small class="muted mono">${esc(s.model)}</small>`:""}</td>${cols.map(([k,,f])=>{const v=s[k];return `<td class="num">${v==null?"—":f(v)}</td>`;}).join("")}</tr>`).join("")}</tbody>`;
-
+async function decide(body) {
+  run.msg = "";
+  try { run.human = await post(`/api/runs/${run.id}/decision`, body); run.choosing = false; run.verify = await api(`/api/runs/${run.id}/verify`); }
+  catch (err) { run.msg = err.message; }
+  renderRun();
 }
 
-// ---------------------------------------------------------------- resume a run from the URL
-reset();
-const q=new URLSearchParams(location.search).get("run");
-if(q){state.runId=q;setStatus("replaying "+q,"live");connect(q);}
+/* ------------------------------------------------------------------ results */
+const batch = {running: false, done: 0, total: 0, n: store.get("triad.batchN") || 10, saved: null};
+const ARMS = [{key: "agents", mode: "llm"}, {key: "never", mode: "stubborn"}, {key: "anything", mode: "agreeable"}, {key: "crashes", mode: "crashing"}];
+function record(arm, seed, o) {
+  const landed = o.final && o.decision_source !== "UNRESOLVED";
+  const legal = landed ? Object.values(o.final.verdicts || {}).flat().every(v => v.ok) : null;
+  return {arm, seed, id: o.scenario_id, flight: o.scenario_id.split("-")[0], src: o.decision_source, code: o.fallback_code,
+          fifo: landed ? o.fifo.system_cost : null, final: landed ? o.final.system_cost : null, opt: landed ? o.optimum.system_cost : null, legal,
+          fuel: landed ? o.final.derived.fuel_used_kg - o.fifo.derived.fuel_used_kg : 0, wall: o.wall_s,
+          usd: Object.values(o.agent_meta || {}).reduce((a, m) => a + (m.usd || 0), 0)};
+}
+async function runBatch() {
+  if (batch.running) return;
+  const seeds = Array.from({length: batch.n}, (_, i) => EVAL_SEED_BASE + i);
+  const jobs = ARMS.flatMap(a => seeds.map(seed => ({arm: a.key, mode: a.mode, seed})));
+  Object.assign(batch, {running: true, done: 0, total: jobs.length, error: ""});
+  renderResults(); setState();
+  const out = [];
+  let next = 0;
+  async function worker() {
+    while (next < jobs.length) {
+      const j = jobs[next++];
+      try {
+        const {run_id} = await post("/api/runs", {seed: j.seed, mode: j.mode});
+        let r;
+        for (;;) { r = await api(`/api/runs/${run_id}`); if (r.done) break; await new Promise(res => setTimeout(res, 700)); }
+        if (r.outcome) out.push(record(j.arm, j.seed, r.outcome)); else batch.error = r.error || "a run failed";
+      } catch (err) { batch.error = err.message; }
+      batch.done++; renderResults(); setState();
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+  batch.running = false;
+  batch.saved = {at: Date.now(), n: batch.n, rows: out};
+  store.set("triad.batch", batch.saved);
+  renderResults(); setState();
+}
+function resultsData() {
+  const b = batch.saved || store.get("triad.batch");
+  if (b && b.rows?.length) {
+    batch.saved = b;
+    const A = b.rows.filter(r => r.arm === "agents");
+    if (!A.length) return null;
+    const best = r => r.final != null && Math.abs(r.final - r.opt) <= .5;
+    const fifoBest = r => r.fifo != null && r.opt != null && Math.abs(r.fifo - r.opt) <= .5;
+    const decided = b.rows.filter(r => r.legal !== null);
+    const mean = (xs) => xs.length ? xs.reduce((a, x) => a + x, 0) / xs.length : 0;
+    const arm = k => b.rows.filter(r => r.arm === k);
+    return {kind: "batch", n: A.length, A, arm,
+      bestN: A.filter(best).length, fifoN: A.filter(fifoBest).length,
+      illegal: decided.filter(r => !r.legal).length, runs: b.rows.length,
+      consensus: A.filter(r => r.src === "CONSENSUS").length, legalRate: mean(A.filter(r => r.legal !== null).map(r => r.legal ? 1 : 0)),
+      fuel: mean(A.map(r => r.fuel)), wall: mean(A.map(r => r.wall)), usd: mean(A.map(r => r.usd)),
+      cost: {fifo: mean(A.filter(r => r.fifo != null).map(r => r.fifo)), agents: mean(A.filter(r => r.final != null).map(r => r.final)), opt: mean(A.filter(r => r.opt != null).map(r => r.opt))},
+      unresolved: A.filter(r => r.src === "UNRESOLVED").length};
+  }
+  if (batch.server) {
+    const arms = batch.server.arms || {};
+    const k = Object.keys(arms).find(x => x.startsWith("llm:")) || Object.keys(arms)[0];
+    if (!k) return null;
+    const a = arms[k];
+    return {kind: "server", tag: batch.server.tag, n: a.n, bestN: Math.round(a.share_at_optimum * a.n), consensus: Math.round(a.consensus_rate * a.n),
+            legalRate: a.final_feasible_rate, fuel: a.delta_vs_fifo_mean?.fuel_kg || 0, wall: a.wall_s_mean, usd: a.usd_mean,
+            runs: Object.values(arms).reduce((s, x) => s + x.n, 0), illegal: Object.values(arms).some(x => x.final_feasible_rate < 1) ? null : 0, arms};
+  }
+  return null;
+}
+function renderResults() {
+  const d = resultsData();
+  const hero = $("#res-hero"), board = $("#res-board");
+  if (!d) {
+    hero.innerHTML = `<div class="big">0<span>/0</span></div><div><h1>No batch yet</h1><p>Run the agents on unseen flights to see how they compare with first come, first served and the solver.</p></div>`;
+  } else {
+    const sub = d.kind === "batch"
+      ? `First come, first served managed ${d.fifoN}. ${d.illegal === 0 ? "No illegal plan" : `${d.illegal} illegal plan${d.illegal === 1 ? "" : "s"}`} in ${d.runs} test runs.`
+      : `From the saved batch “${esc(d.tag)}”. ${d.illegal === 0 ? `No illegal plan in ${d.runs} test runs.` : ""} Run a batch here to see each flight.`;
+    hero.innerHTML = `<div class="big">${d.bestN}<span>/${d.n}</span></div><div><h1>flights landed on the best possible plan</h1><p>${sub}</p></div>`;
+  }
+  const own = `<div class="side lit">Try</div><section class="own"><h3>Run your own batch</h3>
+    <span class="step"><button type="button" id="n-dn" aria-label="Fewer flights" ${batch.running ? "disabled" : ""}>−</button><em>${batch.n}</em><button type="button" id="n-up" aria-label="More flights" ${batch.running ? "disabled" : ""}>+</button></span>
+    <span class="muted">flights, about ${Math.max(1, Math.round(batch.n * 9 / 60 * 1.4))} min and $${(batch.n * 0.09).toFixed(2)}</span>
+    ${tipHTML("i", "Runs the agents on unseen flights from the evaluation range, plus scripted agents that never agree, accept anything or crash. Fuel, gates, crew and passenger counts are synthetic, seeded from each real flight. A small batch is a small sample.", "info")}
+    <button type="button" class="pill solid" id="run-batch" ${batch.running ? "disabled" : ""}>${batch.running ? "Running" : "Run batch"}</button>
+    ${batch.running ? `<div class="progress"><i style="width:${(batch.done / batch.total * 100).toFixed(1)}%"></i></div>` : ""}
+    ${batch.error && !batch.running ? `<span class="err">Some runs failed: ${esc(batch.error)}</span>` : ""}</section>`;
+  if (!d) { board.innerHTML = own; return; }
+  const stat = (v, l, cls = "") => `<div class="stat"><b class="${cls}">${v}</b><span>${l}</span></div>`;
+  let html = `<div class="side lit">Overall</div>
+    ${stat(`${d.consensus}/${d.n}`, "reached consensus", "g")}
+    ${stat(`${Math.round(d.legalRate * 100)}%`, "plans pass every rule", d.legalRate >= 1 ? "g" : "r")}
+    ${stat(Math.abs(d.fuel) < .5 ? "0" : `${d.fuel < 0 ? "−" : "+"}${n0(Math.abs(d.fuel))}`, "kg fuel per flight")}
+    ${stat(`${d.wall.toFixed(1)} s`, `per flight, $${d.usd.toFixed(2)}`)}`;
+  if (d.kind === "batch") {
+    const rows = d.A.filter(r => r.fifo != null && r.opt != null).map(r => ({...r, avail: r.fifo - r.opt, got: r.final != null ? r.fifo - r.final : 0}));
+    const real = rows.filter(r => r.avail > .5).sort((a, b) => b.avail - a.avail);
+    const flat = rows.filter(r => r.avail <= .5);
+    const max = Math.max(1, ...real.map(r => r.avail));
+    const line = r => {
+      const full = r.got >= r.avail - .5;
+      const tip = full ? "" : `<span class="bubble">Captured ${n0(Math.max(0, r.got))} of ${n0(r.avail)} available. ${r.src === "CONSENSUS" ? "The agents agreed on a costlier legal plan." : fallbackText({fallback_code: r.code})}.</span>`;
+      return `<span>${esc(r.flight)}</span><div class="trk ${tip ? "tip" : ""}" ${tip ? 'tabindex="0"' : ""}><span class="avail" style="width:${(r.avail / max * 100).toFixed(1)}%"></span>${r.got > .5 ? `<span class="got" style="width:${(Math.min(r.got, r.avail) / max * 100).toFixed(1)}%"></span>` : ""}${tip}</div><span class="res ${full ? "full" : "miss"}">${n0(Math.max(0, r.got))} / ${n0(r.avail)}</span>`;
+    };
+    const flatRow = flat.length ? `<span>${flat.length} more</span><div class="dots">${flat.slice(0, 10).map(() => "<i></i>").join("")}&nbsp;first come was already best</div><span class="res">${flat.every(r => r.final != null && Math.abs(r.final - r.opt) <= .5) ? "agreed" : "mixed"}</span>` : "";
+    const ten = (k, n) => `<div class="ten" style="grid-template-columns:repeat(${n},1fr)">${Array.from({length: n}, (_, i) => `<i class="${i < k ? "y" : ""}"></i>`).join("")}</div>`;
+    html += `<div class="side">Flights</div>
+      <section class="panel span2"><header><h2>Saving captured</h2>${tipHTML("i", "Grey is the saving the best legal plan offered over first come, first served. Green is what the agents captured.", "info")}</header>
+        <div class="flights">${real.map(line).join("")}${flatRow}</div></section>
+      <section class="panel span2"><header><h2>Best plan found</h2>${tipHTML("i", "Same flights, same cost model. Mean cost per flight under each.", "info")}</header>
+        <div class="ways">
+          <div class="way"><div class="lbl"><span>First come, first served</span><b>${d.fifoN}<small>/${d.n}</small></b></div>${ten(d.fifoN, d.n)}<div class="c">${n0(d.cost.fifo)} per flight</div></div>
+          <div class="way us"><div class="lbl"><span>TRIAD agents</span><b>${d.bestN}<small>/${d.n}</small></b></div>${ten(d.bestN, d.n)}<div class="c">${n0(d.cost.agents)} per flight</div></div>
+          <div class="way"><div class="lbl"><span>Central solver</span><b>${d.n}<small>/${d.n}</small></b></div>${ten(d.n, d.n)}<div class="c">${n0(d.cost.opt)} per flight, needs everyone's private data</div></div>
+        </div></section>`;
+    const sf = (k, title, sub) => { const R = d.arm(k).filter(r => r.legal !== null); const bad = R.filter(r => !r.legal).length;
+      return `<div class="sf"><div class="n">${d.arm(k).length}</div><h4>${title}</h4><p>${sub}</p><span class="zero">${bad ? no(12) : ok(12)}${bad} illegal</span></div>`; };
+    html += `<div class="side">Safety</div>
+      ${sf("never", "Never agrees", "Solver steps in")}
+      ${sf("anything", "Accepts anything", "Settles for first come")}
+      ${sf("crashes", "Crashes", "Solver steps in, flagged")}
+      <div class="sf tip" tabindex="0"><div class="n">${d.unresolved}</div><h4>No legal landing</h4><p>Handed to you</p><span class="tag">You decide</span><span class="bubble">The system never orders a diversion. It hands the duty manager an assessment.</span></div>`;
+  } else {
+    const a = d.arms;
+    const stubTile = (k, title, sub) => a[k] ? `<div class="sf"><div class="n">${a[k].n}</div><h4>${title}</h4><p>${sub}</p><span class="zero">${a[k].final_feasible_rate >= 1 ? ok(12) : no(12)}${a[k].final_feasible_rate >= 1 ? 0 : Math.round((1 - a[k].final_feasible_rate) * a[k].n)} illegal</span></div>` : "";
+    const tiles = [stubTile("stubborn", "Never agrees", "Solver steps in"), stubTile("agreeable", "Accepts anything", "Settles for first come"), stubTile("crashing", "Crashes", "Solver steps in, flagged")].filter(Boolean);
+    html += `<div class="side">Flights</div><div class="empty span4"><div><b>Each flight appears here after a batch</b>The saved batch only keeps totals. Run one below to see flight by flight.</div></div>`;
+    if (tiles.length) html += `<div class="side">Safety</div>${tiles.join("")}${tiles.length < 4 ? `<div style="grid-column:span ${4 - tiles.length}"></div>` : ""}`;
+  }
+  board.innerHTML = html + own;
+}
+$("#res-board").addEventListener("click", e => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  if (t.id === "n-dn") batch.n = Math.max(1, batch.n - 1);
+  if (t.id === "n-up") batch.n = Math.min(30, batch.n + 1);
+  if (t.id === "n-dn" || t.id === "n-up") { store.set("triad.batchN", batch.n); renderResults(); }
+  if (t.id === "run-batch") runBatch();
+});
+async function loadServerEval() { try { batch.server = await api("/api/eval"); } catch { batch.server = null; } if (!$("#v-results").hidden) renderResults(); }
+
+/* keep an open tooltip inside the window */
+function placeTip(e) {
+  const t = e.target.closest?.(".tip"); if (!t) return;
+  const bb = t.querySelector(":scope > .bubble"); if (!bb) return;
+  bb.style.setProperty("--dx", "0px");
+  requestAnimationFrame(() => { const r = bb.getBoundingClientRect(); if (!r.width) return;
+    let dx = 0; if (r.right > innerWidth - 12) dx = innerWidth - 12 - r.right; if (r.left < 12) dx = 12 - r.left;
+    bb.style.setProperty("--dx", `${dx}px`); });
+}
+document.addEventListener("mouseover", placeTip);
+document.addEventListener("focusin", placeTip);
+
+loadSetup();
+loadServerEval();
+setState();
 </script>
 </body>
 </html>
