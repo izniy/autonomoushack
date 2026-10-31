@@ -64,8 +64,14 @@ def _telemetry(agent: Agent, raw: dict, attempt: int) -> None:
 
 def run(s: Scenario, agents: dict[Party3, Agent], ledger_path: Path | None = None,
         max_rounds: int | None = None, parallel: bool = True) -> tuple[Outcome, Ledger]:
-    t0 = time.time()
     judge = Judge(s, ledger_path=ledger_path, max_rounds=max_rounds)
+    return drive(judge, agents, parallel), judge.ledger
+
+
+def drive(judge: Judge, agents: dict[Party3, Agent], parallel: bool = True) -> Outcome:
+    """Run the rounds against an already constructed judge (the API builds the judge itself so
+    it can observe the ledger and answer questions about the option space afterwards)."""
+    t0 = time.time()
     if not judge.unresolved:
         for rnd in range(1, judge.max_rounds + 1):
             views = judge.start_round(rnd)
@@ -76,8 +82,7 @@ def run(s: Scenario, agents: dict[Party3, Agent], ledger_path: Path | None = Non
                 replies = {p: ask(agents[p], views[p]) for p in PARTIES}
             if judge.judge_round(rnd, replies).stop:
                 break
-    out = judge.finish({p: agents[p].meta() for p in PARTIES}, time.time() - t0)
-    return out, judge.ledger
+    return judge.finish({p: agents[p].meta() for p in PARTIES}, time.time() - t0)
 
 
 def describe_outcome(s: Scenario, o: Outcome) -> str:

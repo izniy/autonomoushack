@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -46,10 +47,12 @@ def _hash(prev_hash: str, body: dict) -> str:
 
 
 class Ledger:
-    def __init__(self, scenario_id: str, path: Path | None = None):
+    def __init__(self, scenario_id: str, path: Path | None = None,
+                 on_append: Callable[[Entry], None] | None = None):
         self.scenario_id = scenario_id
         self.path = path
         self.entries: list[Entry] = []
+        self.on_append = on_append      # live observers (the API streams entries to the browser)
         if path:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("")
@@ -67,6 +70,8 @@ class Ledger:
         if self.path:
             with self.path.open("a") as f:
                 f.write(_canonical(e.model_dump()) + "\n")
+        if self.on_append:
+            self.on_append(e)
         return e
 
     def of_type(self, *types: EntryType) -> list[Entry]:

@@ -10,6 +10,7 @@ direct loop, a test) feeds it one `Reply` per party per round and reads back the
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -17,7 +18,7 @@ from typing import Any, Literal
 from pydantic import BaseModel
 
 from . import config
-from .ledger import Ledger
+from .ledger import Entry, Ledger
 from .messages import PARTIES, AgentMessage, AgentView, Party3, PriorMessage
 from .proposal import REMOTE_STAND, Proposal
 from .scenario import Scenario
@@ -115,11 +116,12 @@ def valid_references(s: Scenario, p: Proposal) -> str | None:
 
 class Judge:
     def __init__(self, s: Scenario, ledger_path: Path | None = None, max_rounds: int | None = None,
-                 evals: list[Evaluation] | None = None, seed: Evaluation | None = None):
+                 evals: list[Evaluation] | None = None, seed: Evaluation | None = None,
+                 on_entry: Callable[[Entry], None] | None = None):
         self.s = s
         self.max_rounds = max_rounds or config.MAX_ROUNDS
         self.threshold = config.ACCEPTANCE_THRESHOLD
-        self.ledger = Ledger(s.id, ledger_path)
+        self.ledger = Ledger(s.id, ledger_path, on_append=on_entry)
         self.evals = evals if evals is not None else evaluate_all(s)
         self.by_key = {e.proposal.key(): e for e in self.evals}
 

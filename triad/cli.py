@@ -36,6 +36,14 @@ def main(argv: list[str] | None = None) -> None:
     vf = sub.add_parser("verify", help="verify a ledger file's hash chain")
     vf.add_argument("path")
 
+    au = sub.add_parser("audit", help="render a Markdown audit report from a ledger file")
+    au.add_argument("path")
+
+    sv2 = sub.add_parser("serve", help="start the HTTP API and dashboard")
+    sv2.add_argument("--host", default="127.0.0.1")
+    sv2.add_argument("--port", type=int, default=8000)
+    sv2.add_argument("--reload", action="store_true")
+
     ev = sub.add_parser("eval", help="batch-evaluate negotiation arms over the eval seeds")
     ev.add_argument("--arms", nargs="+", default=["greedy", "yielding", "agreeable", "stubborn"],
                     help="stub policies and/or llm[:model-id]")
@@ -98,6 +106,18 @@ def main(argv: list[str] | None = None) -> None:
         print(("OK" if r.ok else "TAMPERED") + f": {r.entries} entries"
               + (f", first bad seq {r.first_bad_seq}: {r.reason}" if not r.ok else ""))
         raise SystemExit(0 if r.ok else 1)
+    elif args.cmd == "audit":
+        from pathlib import Path
+
+        from .audit import audit_markdown
+        from .ledger import Entry
+
+        lines = [ln for ln in Path(args.path).read_text().splitlines() if ln.strip()]
+        print(audit_markdown([Entry.model_validate(json.loads(ln)) for ln in lines]))
+    elif args.cmd == "serve":
+        import uvicorn
+
+        uvicorn.run("triad.api:app", host=args.host, port=args.port, reload=args.reload)
     elif args.cmd == "eval":
         from .eval import run_eval, summary_markdown
 
