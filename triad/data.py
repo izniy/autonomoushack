@@ -108,10 +108,11 @@ def pick_flight(
     return rows[0]
 
 
-def arrival_bank(flight: dict, window_min: int = 30) -> list[dict]:
-    """Flights scheduled to arrive at the same destination within +/- window."""
+def arrival_bank(flight: dict, window_min: int = 30, center_min: int | None = None) -> list[dict]:
+    """Flights scheduled to arrive at the same destination within +/- window of `center_min`
+    (default: this flight's scheduled arrival)."""
     con = connect()
-    sa = hhmm_to_min(flight["SCHEDULED_ARRIVAL"])
+    sa = center_min if center_min is not None else hhmm_to_min(flight["SCHEDULED_ARRIVAL"])
     cur = con.execute(
         f"""
         SELECT AIRLINE, FLIGHT_NUMBER, TAIL_NUMBER, ORIGIN_AIRPORT, DISTANCE,
