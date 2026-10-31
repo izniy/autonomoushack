@@ -1,0 +1,16 @@
+# environments
+.venv/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# large / generated data
+data/flights.csv
+data/flights.parquet
+data/*.duckdb
+
+# run outputs
+runs/
+reports/*.csv

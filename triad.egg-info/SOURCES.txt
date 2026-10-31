@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+triad/__init__.py
+triad/config.py
+triad.egg-info/PKG-INFO
+triad.egg-info/SOURCES.txt
+triad.egg-info/dependency_links.txt
+triad.egg-info/entry_points.txt
+triad.egg-info/requires.txt
+triad.egg-info/top_level.txt
