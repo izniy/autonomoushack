@@ -13,7 +13,8 @@ from .ledger import Entry, VerifyResult, verify_entries
 from .messages import PARTIES
 
 RULING_TYPES = ("ACCEPT_OK", "SELF_VIOLATION", "REJECT_PREFERENCE", "UNFOUNDED_REJECT",
-                "LATE_COUNTER", "INFEASIBLE_COUNTER", "NON_CONCESSION", "COUNTER_OK")
+                "LATE_COUNTER", "INFEASIBLE_COUNTER", "NON_CONCESSION", "REGRESSIVE_COUNTER",
+                "COUNTER_OK")
 
 
 def _t(ts: float) -> str:
@@ -42,6 +43,9 @@ def _ruling_detail(ruling: Entry | None, outcome: str) -> str:
             return f"cited {pl.get('claimed')} but the proposal passes them"
         case "NON_CONCESSION":
             return str(pl.get("note", ""))
+        case "REGRESSIVE_COUNTER":
+            return (f"discarded: system cost {pl.get('system_cost', 0):,.0f} vs {pl.get('on_table_system_cost', 0):,.0f} "
+                    f"on the table, worst-off utility not raised")
         case "COUNTER_OK":
             return f"system cost {pl.get('system_cost', 0):,.0f}; mutually acceptable {pl.get('mutually_acceptable')}"
         case "ACCEPT_OK" | "REJECT_PREFERENCE":

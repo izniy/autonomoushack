@@ -3,7 +3,7 @@ runtime framework in it.
 
 Owns the proposal on the table, the feasible and mutually-acceptable sets, per-party
 utilities, the round outcomes (ACCEPT_OK, SELF_VIOLATION, INFEASIBLE_COUNTER,
-NON_CONCESSION, UNFOUNDED_REJECT, LATE_COUNTER, ABSTAIN ...), the round winner, consensus,
+NON_CONCESSION, REGRESSIVE_COUNTER, UNFOUNDED_REJECT, LATE_COUNTER, ABSTAIN ...), the round winner, consensus,
 the fallback and the ledger entries for all of it. Any runtime (the ADK pipeline, the
 direct loop, a test) feeds it one `Reply` per party per round and reads back the decision.
 """
@@ -25,11 +25,16 @@ from .scenario import Scenario
 from .solver import Evaluation, evaluate_all, fifo_baseline, optimum
 from .views import party_candidate, private_state, situation_text
 
-SHORTLIST = 10
+SHORTLIST = 10          # a party's cheapest legal options
+SHORTLIST_SYSTEM = 5    # plus the cheapest for the system, and the Pareto frontier, so the
+PARETO_MAX = 5          # optimum is always on somebody's list
 
 DecisionSource = Literal["CONSENSUS", "FALLBACK_SOLVER", "UNRESOLVED"]
 FallbackCode = Literal["NO_CONSENSUS_ROUND_CAP", "NO_ACCEPTABLE_OPTION", "AGENT_ABSTAINED",
                        "AGENT_ERROR", "NO_FEASIBLE_LANDING"]
+# Why a consensus decision missed the optimum (attribution for the evaluation):
+GapCause = Literal["AT_OPTIMUM", "OPTIMUM_NOT_VISIBLE", "OPTIMUM_NOT_PROPOSED",
+                   "OPTIMUM_LOST_ROUND", "OPTIMUM_REJECTED", "NOT_CONSENSUS"]
 
 
 @dataclass
@@ -79,9 +84,11 @@ class Outcome(BaseModel):
     self_violations: int
     unfounded_rejects: int
     late_counters: int
+    regressive_counters: int
     abstains: int
     wall_s: float
     agent_meta: dict[str, Any]
+    gap_cause: GapCause
     diversion_assessment: dict[str, Any] | None = None
 
     @property
@@ -95,6 +102,20 @@ class Outcome(BaseModel):
     @property
     def min_utility_final(self) -> float:
         return min(self.utilities["final"].values())
+
+
+def pareto_frontier(evals: list[Evaluation]) -> list[Evaluation]:
+    """Options no other option beats on every party's cost at once, cheapest for the system first."""
+    def dominated(a: Evaluation) -> bool:
+        ca = [a.costs[p].total for p in PARTIES]
+        for b in evals:
+            if b is a:
+                continue
+            cb = [b.costs[p].total for p in PARTIES]
+            if all(y <= x for x, y in zip(ca, cb)) and any(y < x for x, y in zip(ca, cb)):
+                return True
+        return False
+    return sorted((e for e in evals if not dominated(e)), key=lambda e: e.system_cost)
 
 
 def valid_references(s: Scenario, p: Proposal) -> str | None:
@@ -131,6 +152,7 @@ class Judge:
         self._lo = {p: min((e.costs[p].total for e in self.feasible), default=0.0) for p in PARTIES}
         self._hi = {p: max((e.costs[p].total for e in self.feasible), default=0.0) for p in PARTIES}
         self.acceptable = [e for e in self.feasible if self.is_acceptable(e)]
+        self.pareto = pareto_frontier(self.feasible)
         self.unresolved = not self.feasible
 
         if self.unresolved:
@@ -140,11 +162,14 @@ class Judge:
             self.fifo = seed or fifo_baseline(s, landing)
             self.opt = optimum(s, landing)
             self.current = self.fifo
+            self.optimum_on_table = self.fifo.proposal.key() == self.opt.proposal.key()
 
         self.log: list[PriorMessage] = []
         self.rounds: list[RoundRecord] = []
         self.counters = self.infeasible = self.nonconc = self.selfviol = self.unfounded = 0
-        self.late = self.abstains_total = 0
+        self.late = self.regressive = self.abstains_total = 0
+        self.optimum_seen: set[str] = set()      # parties whose shortlist carried the optimum
+        self.optimum_proposed = self.optimum_on_table = False
         self.abstain_count: dict[str, int] = {p: 0 for p in PARTIES}
         self.error_abstains: dict[str, int] = {p: 0 for p in PARTIES}
         self.last_counter_cost: dict[str, float | None] = {p: None for p in PARTIES}
@@ -213,6 +238,9 @@ class Judge:
         mine = [e for e in self.evals if e.proposal.pilot_action != "DIVERT"
                 and all(v.ok for v in e.verdicts[party])]
         mine.sort(key=lambda e: (e.costs[party].total, e.system_cost))
+        shortlist = self.shortlist(party, mine)
+        if self.opt is not None and self.opt.proposal.key() in {e.proposal.key() for e in shortlist}:
+            self.optimum_seen.add(party)
 
         def cand(e: Evaluation):
             return party_candidate(s, party, e, self.utility(party, e), self.threshold)
@@ -221,10 +249,22 @@ class Judge:
             scenario_id=s.id, party=party, round=rnd, max_rounds=self.max_rounds,
             final_round=self.is_final_round(rnd), situation=situation_text(s, self.max_rounds),
             private_state=private_state(s, party), current=cand(self.current),
-            options=[cand(e) for e in mine[:SHORTLIST]], public_log=self.public_log_for(party),
+            options=[cand(e) for e in shortlist], public_log=self.public_log_for(party),
             my_last_counter_cost=self.last_counter_cost[party], acceptance_threshold=self.threshold,
             mutually_acceptable_exists=bool(self.acceptable), weights=s.weights.model_dump(),
         )
+
+    def shortlist(self, party: Party3, mine: list[Evaluation]) -> list[Evaluation]:
+        """My cheapest legal options, plus the options the judge itself would favour: the cheapest
+        for the system and the Pareto frontier of the three party costs. Both are computed from
+        public weights, so showing them reveals nothing private, and it means no party can miss
+        the optimum merely because it was not among its own ten cheapest. Sorted by my cost."""
+        picked = {e.proposal.key(): e for e in mine[:SHORTLIST]}
+        for e in sorted(self.feasible, key=lambda e: e.system_cost)[:SHORTLIST_SYSTEM]:
+            picked.setdefault(e.proposal.key(), e)
+        for e in self.pareto[:PARETO_MAX]:
+            picked.setdefault(e.proposal.key(), e)
+        return sorted(picked.values(), key=lambda e: (e.costs[party].total, e.system_cost))
 
     def public_log_for(self, party: Party3) -> list[PriorMessage]:
         """Other parties' messages reach a prompt only as structured fields (decision, proposal,
@@ -341,8 +381,22 @@ class Judge:
                             "agent": p, "proposal": prop.model_dump(), "my_cost": own,
                             "previous_counter_cost": floor,
                             "note": "a new counter may not be cheaper for its author than the previous one"})
+                    elif self.regressive_counter(ev):
+                        self.regressive += 1
+                        outcomes[p] = "REGRESSIVE_COUNTER"
+                        detail = (f"system cost {ev.system_cost:,.0f} is above the table's {cur.system_cost:,.0f} "
+                                  f"and the counter does not lift the worst-off party")
+                        led.append("REGRESSIVE_COUNTER", "ORCHESTRATOR", rnd, {
+                            "agent": p, "proposal": prop.model_dump(), "system_cost": ev.system_cost,
+                            "on_table_system_cost": cur.system_cost, "fifo_system_cost": self.fifo.system_cost,
+                            "min_utility": round(min(self.utilities(ev).values()), 3),
+                            "on_table_min_utility": round(min(self.utilities(cur).values()), 3),
+                            "note": "a counter may not make the system worse off than the table unless it "
+                                    "raises the worst-off party's utility and stays no dearer than FIFO"})
                     else:
                         self.last_counter_cost[p] = own
+                        if self.opt is not None and ev.proposal.key() == self.opt.proposal.key():
+                            self.optimum_proposed = True
                         ok_counters.append((p, ev))
                         outcomes[p] = "COUNTER_OK"
                         led.append("COUNTER_OK", "ORCHESTRATOR", rnd, {
@@ -354,6 +408,17 @@ class Judge:
                                      proposal_key=msg.proposal.key() if msg.proposal else None,
                                      cited_rules=sorted(msg.rejected_rule_ids), rationale=msg.rationale,
                                      outcome=outcomes[p], detail=detail))
+
+    def regressive_counter(self, ev: Evaluation) -> bool:
+        """The table is monotone: a counter must not raise system cost, except as a fairness move
+        that lifts the worst-off party while staying no dearer than the FIFO status quo. The
+        consequence is an invariant the evaluation can check: a negotiated decision never costs
+        the system more than FIFO."""
+        cur = self.current
+        if ev.system_cost <= cur.system_cost + 1e-6:
+            return False
+        lifts = min(self.utilities(ev).values()) > min(self.utilities(cur).values()) + 1e-9
+        return not (lifts and ev.system_cost <= self.fifo.system_cost + 1e-6)
 
     def pick_winner(self, ok_counters: list[tuple[str, Evaluation]]) -> Evaluation | None:
         """Lowest system cost among feasible, conceding counters; those clearing every party's
@@ -382,7 +447,8 @@ class Judge:
         self.ledger.append("ROUND_END", "ORCHESTRATOR", rnd, {
             "accepted": accepted, "outcomes": outcomes, "consensus": consensus,
             "next_on_table": (next_eval or self.current).proposal.key(),
-            "rule": "lowest system cost among feasible conceding counters, mutually acceptable first, tie earliest slot"})
+            "rule": "lowest system cost among feasible, conceding, non-regressive counters; "
+                    "mutually acceptable first; tie earliest slot"})
 
         stop, code, reason = False, None, None
         if consensus:
@@ -402,6 +468,8 @@ class Judge:
                 code, reason, stop = self.code, self.reason, True
             elif next_eval is not None:
                 self.current = next_eval
+                if self.opt is not None and next_eval.proposal.key() == self.opt.proposal.key():
+                    self.optimum_on_table = True
                 self.ledger.append("PROPOSAL", "ORCHESTRATOR", rnd, {
                     "on_table": self.current.model_dump(), "source": "best feasible counter",
                     "utilities": self.utilities(self.current)})
@@ -411,8 +479,20 @@ class Judge:
 
     # ------------------------------------------------------------ decision
 
+    def gap_cause(self, final: Evaluation) -> GapCause:
+        if self.decision_source != "CONSENSUS":
+            return "NOT_CONSENSUS"
+        if final.proposal.key() == self.opt.proposal.key():
+            return "AT_OPTIMUM"
+        if not self.optimum_seen:
+            return "OPTIMUM_NOT_VISIBLE"
+        if self.optimum_on_table:
+            return "OPTIMUM_REJECTED"
+        return "OPTIMUM_LOST_ROUND" if self.optimum_proposed else "OPTIMUM_NOT_PROPOSED"
+
     def finish(self, agent_meta: dict[str, Any], wall_s: float) -> Outcome:
         final = self.current if self.decision_source == "CONSENSUS" else self.opt
+        cause = self.gap_cause(final)
         assess = self.diversion_assessment() if self.unresolved else None
         utilities = {"final": self.utilities(final), "fifo": self.utilities(self.fifo),
                      "optimum": self.utilities(self.opt)}
@@ -421,6 +501,7 @@ class Judge:
             "final": final.model_dump(), "utilities": utilities,
             "fifo_system_cost": self.fifo.system_cost, "optimum_system_cost": self.opt.system_cost,
             "requires_human_approval": True, "diversion_assessment": assess,
+            "gap_cause": cause, "optimum_visible_to": sorted(self.optimum_seen),
         })
         return Outcome(
             scenario_id=self.s.id, decision_source=self.decision_source, fallback_code=self.code,
@@ -430,6 +511,6 @@ class Judge:
             acceptance_threshold=self.threshold, utilities=utilities,
             counters_attempted=self.counters, infeasible_counters_caught=self.infeasible,
             non_concessions=self.nonconc, self_violations=self.selfviol, unfounded_rejects=self.unfounded,
-            late_counters=self.late, abstains=self.abstains_total, wall_s=round(wall_s, 2),
-            agent_meta=agent_meta, diversion_assessment=assess,
+            late_counters=self.late, regressive_counters=self.regressive, abstains=self.abstains_total,
+            wall_s=round(wall_s, 2), agent_meta=agent_meta, gap_cause=cause, diversion_assessment=assess,
         )

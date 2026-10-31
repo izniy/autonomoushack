@@ -100,8 +100,14 @@ What the judge does with your message:
     verdicts, so pick from your option list (all of them pass your rules) and use the public log
     to avoid options other parties' rules already rejected (INFEASIBLE_COUNTER lists the rules).
     A counter must also concede: it may not cost you less than your previous counter
-    (NON_CONCESSION is discarded). Among valid counters the judge puts the one with the lowest
-    system cost on the table, preferring options that clear every party's acceptance threshold.
+    (NON_CONCESSION is discarded). And it may not make the system worse off than the proposal
+    on the table, unless it raises the worst-off party's utility while costing the system no
+    more than the FIFO status quo (REGRESSIVE_COUNTER is discarded). Among valid counters the
+    judge puts the one with the lowest system cost on the table, preferring options that clear
+    every party's acceptance threshold. Your option list already contains the options the judge
+    favours: the cheapest for the system and those no party can improve on without hurting
+    another, so a counter taken from it that lowers system cost is the surest way to move the
+    table.
   - REJECT with rule ids is only valid if the proposal really fails those rules for you
     (your verdicts show ok=false); otherwise it is logged UNFOUNDED_REJECT. REJECT with an
     empty list is a legitimate preference vote.
@@ -158,7 +164,8 @@ def render_view(v: AgentView) -> str:
              "## On the table now", _candidate(v.current, "PROPOSAL")]
     if v.my_last_counter_cost is not None:
         lines.append(f"\nConcession floor: your next counter must cost you at least {v.my_last_counter_cost:,.0f}.")
-    lines += ["", f"## Your options (pass your rules; sorted by your cost; top {len(v.options)})"]
+    lines += ["", (f"## Your options (pass your rules; sorted by your cost; {len(v.options)} listed, "
+                   "including the system-cheapest and the options no party can improve on without hurting another)")]
     for i, c in enumerate(v.options, 1):
         lines.append(_candidate(c, f"OPTION {i}"))
     lines += ["", "## Public log"]

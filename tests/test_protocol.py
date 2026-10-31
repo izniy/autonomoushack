@@ -222,7 +222,10 @@ def test_self_violation_is_refused(scenario):
 @requires_data
 def test_non_concession_is_discarded(scenario):
     evals = evaluate_all(scenario)
-    feas = sorted((e for e in evals if e.feasible and e.proposal.pilot_action != "DIVERT"),
+    landing = [e for e in evals if e.feasible and e.proposal.pilot_action != "DIVERT"]
+    fifo = fifo_baseline(scenario, landing)
+    # the first counter must be admissible (no dearer for the system than FIFO) to set the floor
+    feas = sorted((e for e in landing if e.system_cost <= fifo.system_cost),
                   key=lambda e: e.costs["PILOT"].total)
     assert len(feas) >= 2
     dearer, cheaper = feas[-1], feas[0]
@@ -235,6 +238,60 @@ def test_non_concession_is_discarded(scenario):
     kinds = [e.payload["agent"] for e in led.of_type("NON_CONCESSION")]
     assert "PILOT" in kinds
     assert out.non_concessions >= 1
+
+
+@requires_data
+def test_regressive_counter_is_discarded_and_table_is_monotone(scenario):
+    evals = evaluate_all(scenario)
+    landing = [e for e in evals if e.feasible and e.proposal.pilot_action != "DIVERT"]
+    fifo = fifo_baseline(scenario, landing)
+    j = Judge(scenario, evals=evals)
+    dearer = [e for e in landing if e.system_cost > fifo.system_cost
+              and min(j.utilities(e).values()) <= min(j.utilities(fifo).values())]
+    if not dearer:
+        pytest.skip("every option dearer than FIFO lifts the worst-off party in this scenario")
+    worst = max(dearer, key=lambda e: e.system_cost)
+    agents = {
+        "ATC": _Scripted("ATC", [{"agent": "ATC", "decision": "COUNTER", "rationale": "x",
+                                  "proposal": worst.proposal.model_dump()}]),
+        "PILOT": StubAgent("PILOT", "agreeable"),
+        "GROUND": StubAgent("GROUND", "agreeable"),
+    }
+    out, led = run(scenario, agents, max_rounds=2)
+    assert out.regressive_counters == 1 and out.rounds[0].outcomes["ATC"] == "REGRESSIVE_COUNTER"
+    e = led.of_type("REGRESSIVE_COUNTER")[0]
+    assert e.payload["system_cost"] > e.payload["on_table_system_cost"]
+    assert out.rounds[0].next_on_table is None            # the table did not move
+
+
+@requires_data
+def test_negotiated_decision_is_never_dearer_than_fifo(scenario):
+    for policy in ("greedy", "yielding", "agreeable"):
+        out, _ = run(scenario, stub_team(policy))
+        assert out.saving_vs_fifo >= 0, policy
+
+
+@requires_data
+def test_shortlist_carries_the_optimum_and_pareto_options(scenario):
+    j = Judge(scenario)
+    opt_key = j.opt.proposal.key()
+    for p in ("ATC", "PILOT", "GROUND"):
+        v = j.view(p, 1)
+        keys = {c.proposal.key() for c in v.options}
+        assert opt_key in keys
+        assert all(c.feasible_for_me for c in v.options)
+        costs = [c.my_cost for c in v.options]
+        assert costs == sorted(costs)
+    assert j.optimum_seen == {"ATC", "PILOT", "GROUND"}
+    assert j.pareto and j.pareto[0].proposal.key() == opt_key   # the optimum is Pareto-efficient
+
+
+@requires_data
+def test_gap_cause_is_attributed(scenario):
+    out, _ = run(scenario, stub_team("agreeable"))
+    assert out.gap_cause in ("AT_OPTIMUM", "OPTIMUM_REJECTED", "OPTIMUM_NOT_PROPOSED", "OPTIMUM_LOST_ROUND")
+    out, _ = run(scenario, stub_team("stubborn"))
+    assert out.gap_cause == "NOT_CONSENSUS"
 
 
 @requires_data
