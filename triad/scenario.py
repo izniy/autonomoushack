@@ -127,6 +127,7 @@ class Slot(BaseModel):
 
 
 class ATCState(BaseModel):
+    arrival_runways: int
     nominal_aar_per_15: int
     effective_aar_per_15: int
     demand_per_bin: dict[int, int]
@@ -194,11 +195,11 @@ class Weights(BaseModel):
     """Public weights turning per-party costs into one system cost (USD-ish units)."""
     delay_min: float = 75.0        # A4A all-in cost per aircraft-minute (verify & cite)
     fuel_kg: float = 0.9
-    missed_pax: float = 400.0
+    missed_pax: float = 250.0
     crew_overtime_min: float = 12.0
     gate_change: float = 500.0
     empty_slot: float = 300.0
-    divert: float = 25_000.0
+    divert: float = 60_000.0
 
 
 class Scenario(BaseModel):
@@ -261,7 +262,7 @@ def build_scenario(flight: dict) -> Scenario:
     capacity_factor = round(rng.uniform(0.5, 0.75), 2) if weather else round(rng.uniform(0.8, 1.0), 2)
     aar_hist = data.nominal_arrival_rate(fl.dest, sched_arr // 60)
     nominal = max(2, int(aar_hist["p95_per_15min"]))
-    effective = max(1, int(round(nominal * capacity_factor)))
+    effective = nominal_effective = max(1, int(round(nominal * capacity_factor)))
     prov["disruption.trigger"] = "real"
     prov["disruption.capacity_factor"] = "synthetic"
     prov["atc.nominal_aar_per_15"] = "derived"
@@ -287,16 +288,25 @@ def build_scenario(flight: dict) -> Scenario:
     prov["bank"] = "derived"
     prov["bank[].wake"] = "synthetic"
     slots = []
-    first_slot = (earliest // SLOT_MIN) * SLOT_MIN
+    first_slot = -(-earliest // SLOT_MIN) * SLOT_MIN  # first 5-min slot at/after earliest
     for i in range(N_SLOTS):
         s = first_slot + i * SLOT_MIN
         slots.append(Slot(id=f"S{i:02d}", start_min=s, label=min_to_hhmm(s), bin_start_min=(s // 15) * 15))
     bins = sorted({s.bin_start_min for s in slots})
     demand = {b: sum(1 for x in bank if b <= x.sched_arr_min < b + 15) for b in bins}
     wakes = {b: [x.wake for x in bank if b <= x.sched_arr_min < b + 15] for b in bins}
-    atc = ATCState(nominal_aar_per_15=nominal, effective_aar_per_15=effective,
+    # When the bank is busy, the reduced rate saturates the bin the flight is estimating for:
+    # that is the disruption. At quiet airports the rate cut changes nothing and the
+    # negotiation is about the gate and the crew instead.
+    eta_bin = (eta // 15) * 15
+    later = [demand[b] for b in bins if b > eta_bin]
+    if demand.get(eta_bin, 0) >= 0.7 * effective and later and min(later) <= demand[eta_bin] - 2:
+        effective = max(1, min(effective, demand[eta_bin]))
+        note = note.replace(f"reduced to {nominal_effective}/15 min", f"reduced to {effective}/15 min")
+    # Roughly 40 arrivals/hour per runway; large hubs land on several in parallel.
+    atc = ATCState(arrival_runways=max(1, -(-nominal // 10)), nominal_aar_per_15=nominal, effective_aar_per_15=effective,
                    demand_per_bin=demand, wakes_per_bin=wakes, slots=slots,
-                   max_hold_min=rng.choice([20, 25, 30]))
+                   max_hold_min=rng.choice([25, 30, 40]))
     prov["atc.demand_per_bin"] = "derived"
     prov["atc.max_hold_min"] = "synthetic"
 
@@ -308,7 +318,7 @@ def build_scenario(flight: dict) -> Scenario:
     contingency = round(0.05 * (fl.air_time_min or 120) * ac.cruise_burn_kg_min, 0)
     # Fuel above the legal floor at the decision point, expressed as minutes of holding.
     # Drawn so that some scenarios are comfortable and some are tight.
-    spare_hold_min = rng.choice([8, 12, 15, 20, 25, 30, 40])
+    spare_hold_min = rng.choice([15, 20, 25, 30, 40, 50, 60])
     fob = (final_reserve_min * ac.cruise_burn_kg_min + alt_fuel + contingency
            + DECISION_LEAD_MIN * ac.cruise_burn_kg_min + spare_hold_min * ac.hold_burn_kg_min)
     fuel = FuelState(fuel_on_board_kg=round(fob, 0), final_reserve_min=final_reserve_min,
@@ -318,7 +328,9 @@ def build_scenario(flight: dict) -> Scenario:
                      speed_up_extra_kg_min=round(ac.cruise_burn_kg_min * 0.6, 1),
                      turbulence_hold_penalty=weather and rng.random() < 0.5)
     prov["pilot.fuel"] = "synthetic"
-    conn_rows = data.connection_candidates(flight)
+    # Connections measured from the ETA, not the schedule: banks that the inbound delay has
+    # already made unreachable are not a negotiable quantity.
+    conn_rows = data.connection_candidates(flight, lo=max(dep_delay, 0) + 40, hi=max(dep_delay, 0) + 150)
     load = rng.uniform(0.7, 0.95)
     pax_total = int(ac.seats * load)
     conns = []
@@ -390,8 +402,28 @@ def build_scenario(flight: dict) -> Scenario:
     )
 
 
-def random_scenario(seed: int | None = None, dest: str | None = None) -> Scenario:
-    return build_scenario(data.pick_flight(seed=seed, dest=dest))
+BUSY_BANK_FRACTION = 0.6   # ETA bin demand relative to the nominal rate
+BUSY_BANK_TRIES = 8
+
+
+def random_scenario(seed: int | None = None, dest: str | None = None, busy: bool = True) -> Scenario:
+    """Seeded random disrupted flight.
+
+    With `busy` (default) the first few candidate flights are skipped unless they arrive into
+    a loaded bank, where a rate cut actually re-sequences arrivals. Quiet-airport cases exist
+    in the data too, but there the slot question is trivial and only gate and crew remain.
+    """
+    if seed is None or not busy:
+        return build_scenario(data.pick_flight(seed=seed, dest=dest))
+    first = None
+    for k in range(BUSY_BANK_TRIES):
+        sc = build_scenario(data.pick_flight(seed=seed + 7919 * k, dest=dest))
+        sc.seed = seed
+        eta_bin = (sc.pilot.eta_min // 15) * 15
+        if sc.atc.demand_per_bin.get(eta_bin, 0) >= BUSY_BANK_FRACTION * sc.atc.nominal_aar_per_15:
+            return sc
+        first = first or sc
+    return first
 
 
 def describe(s: Scenario) -> str:
