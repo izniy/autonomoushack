@@ -44,10 +44,51 @@ Then build the parquet cache once:
 ## Usage
 
 ```bash
-.venv/bin/triad scenario --random          # build and print a disruption scenario
-.venv/bin/triad negotiate --random --stub  # run the protocol with stub agents (no API)
+.venv/bin/triad scenario --seed 29          # build and print a disruption scenario
+.venv/bin/triad negotiate --seed 29 --stub  # run the protocol with stub agents (no API)
 .venv/bin/pytest
 ```
+
+## Anthropic agents and orchestration
+
+Set `ANTHROPIC_API_KEY` and `AGENT_MODEL` in `.env` to a model ID available in your
+Anthropic account (`TRIAD_MODEL` is also supported). No model is assumed or verified
+by an offline test. Then run:
+
+```bash
+.venv/bin/triad negotiate --seed 29 --ledger runs/demo.jsonl
+.venv/bin/triad verify runs/demo.jsonl
+```
+
+Three separate `AnthropicAgent` instances call the Anthropic Python SDK directly;
+Google ADK and LiteLLM are not used. A forced `submit_response` tool call carries the
+Pydantic message schema, following the
+[Anthropic Messages API](https://platform.claude.com/docs/en/api/messages/create).
+It submits data only; it cannot execute an aircraft or airport action.
+
+The Python orchestrator freezes the role views before launching three parallel calls.
+Each agent receives its own private metrics, the current proposal, its shortlist and
+previous judge results. No conversation history is shared between SDK clients, and
+another branch's same-round response cannot enter its prompt. Free-text rationales
+stay in the audit log and are not replayed as scenario information.
+
+Local validation handles schema, identity, feasibility, references and concessions.
+There is at most one formatting repair per branch per round. Provider failures become
+abstentions without an extra repair call; SDK retries are disabled and requests have
+a 30-second timeout. Unanimous valid acceptance exits early; otherwise the engine
+chooses the full-set solver fallback within three rounds (earlier after repeated
+abstentions). An empty feasible set skips all model calls and returns `UNRESOLVED`.
+Every final proposal is freshly validated. Prompt hashes, model/response IDs, latency
+and available token usage are recorded in outcome metadata and the decision ledger.
+Unknown usage and estimated cost remain null.
+
+**Scope:** this integrates the existing repository's proposal/concession protocol.
+The newer attached PRD's ranked option-ID ballots, Borda compromise, normalised utility
+thresholds, LAND-only engine, SSE service and A2UI are not implemented by this change.
+The existing engine still models DIVERT; this is a simulation, not evidence of alternate
+airport suitability. Historical end-to-end tests need the missing `flights.parquet`;
+`tests/test_agents.py` uses an explicitly synthetic fixture and mocked SDK responses.
+No live-model availability, API cost, or held-out evaluation is claimed.
 
 ## Layout
 
@@ -62,7 +103,6 @@ triad/
   messages.py   strict message schemas
   ledger.py     hash-chained JSONL ledger
   protocol.py   round orchestration
-  agents.py     LLM-backed and stub agents
-  eval.py       batch evaluation
-  api.py        FastAPI service + dashboard
+  agents.py     Anthropic SDK agents and isolated role prompts
+  stubs.py      deterministic agents for offline protocol checks
 ```

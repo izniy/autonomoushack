@@ -17,8 +17,10 @@ AIRPORTS_CSV = DATA_DIR / "airports.csv"
 AIRLINES_CSV = DATA_DIR / "airlines.csv"
 RUNS_DIR = ROOT / "runs"
 
-MODEL = os.getenv("TRIAD_MODEL", "claude-sonnet-5")
+MODEL = os.getenv("AGENT_MODEL") or os.getenv("TRIAD_MODEL", "")
 EVAL_MODEL = os.getenv("TRIAD_EVAL_MODEL", "claude-haiku-4-5-20251001")
+AGENT_TIMEOUT_S = 30.0
+AGENT_MAX_TOKENS = 800
 
 # Protocol limits are enforced in code, never by prompting.
 MAX_ROUNDS = 3

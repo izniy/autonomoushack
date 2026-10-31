@@ -24,7 +24,7 @@ from .ledger import Ledger
 from .messages import PARTIES, AgentMessage, AgentView, Candidate, Party3, PriorMessage, parse_message
 from .proposal import REMOTE_STAND, Proposal
 from .scenario import Scenario
-from .solver import Evaluation, evaluate_all, fifo_baseline, optimum
+from .solver import Evaluation, evaluate, evaluate_all, fifo_baseline, optimum
 
 SHORTLIST = 10
 
@@ -130,9 +130,9 @@ class Outcome(BaseModel):
     scenario_id: str
     decision_source: str                # CONSENSUS | FALLBACK_SOLVER
     fallback_reason: str | None
-    final: Evaluation
-    fifo: Evaluation
-    optimum: Evaluation
+    final: Evaluation | None
+    fifo: Evaluation | None
+    optimum: Evaluation | None
     rounds: list[RoundRecord]
     rounds_used: int
     counters_attempted: int
@@ -145,12 +145,12 @@ class Outcome(BaseModel):
     agent_meta: dict[str, Any]
 
     @property
-    def gap_vs_optimum(self) -> float:
-        return round(self.final.system_cost - self.optimum.system_cost, 1)
+    def gap_vs_optimum(self) -> float | None:
+        return round(self.final.system_cost - self.optimum.system_cost, 1) if self.final and self.optimum else None
 
     @property
-    def saving_vs_fifo(self) -> float:
-        return round(self.fifo.system_cost - self.final.system_cost, 1)
+    def saving_vs_fifo(self) -> float | None:
+        return round(self.fifo.system_cost - self.final.system_cost, 1) if self.fifo and self.final else None
 
 
 # ---------------------------------------------------------------- orchestrator
@@ -174,7 +174,12 @@ def _valid_references(s: Scenario, p: Proposal) -> str | None:
 def run(s: Scenario, agents: dict[Party3, Agent], ledger_path: Path | None = None,
         max_rounds: int | None = None, parallel: bool = True) -> tuple[Outcome, Ledger]:
     t0 = time.time()
-    max_rounds = max_rounds or config.MAX_ROUNDS
+    if max_rounds is None:
+        max_rounds = config.MAX_ROUNDS
+    if not 1 <= max_rounds <= config.MAX_ROUNDS:
+        raise ValueError(f"max_rounds must be between 1 and {config.MAX_ROUNDS}")
+    if set(agents) != set(PARTIES) or any(agents[p].party != p for p in PARTIES):
+        raise ValueError("exactly one correctly bound agent per party is required")
     ledger = Ledger(s.id, ledger_path)
     log: list[PriorMessage] = []
 
@@ -187,6 +192,20 @@ def run(s: Scenario, agents: dict[Party3, Agent], ledger_path: Path | None = Non
         "scenario": s.model_dump(), "n_proposals": len(evals),
         "n_feasible": sum(e.feasible for e in evals), "seed_rule": "FIFO: earliest legal slot, hold, original gate else first free else remote",
     })
+    if opt is None or current is None:
+        reason = "NO_FEASIBLE_GENERATED_PROPOSAL"
+        ledger.append("DECISION", "ORCHESTRATOR", 0, {
+            "decision_source": "UNRESOLVED", "fallback_reason": reason,
+            "final": None, "requires_human_approval": True,
+        })
+        return Outcome(
+            scenario_id=s.id, decision_source="UNRESOLVED", fallback_reason=reason,
+            final=None, fifo=fifo, optimum=opt, rounds=[], rounds_used=0,
+            counters_attempted=0, infeasible_counters_caught=0, non_concessions=0,
+            self_violations=0, unfounded_rejects=0, abstains=0,
+            wall_s=round(time.time() - t0, 2),
+            agent_meta={p: agents[p].meta() for p in PARTIES},
+        ), ledger
     ledger.append("PROPOSAL", "ORCHESTRATOR", 0, {"on_table": current.model_dump(), "source": "FIFO seed"})
 
     counters = infeasible = nonconc = selfviol = unfounded = abstains_total = 0
@@ -211,10 +230,12 @@ def run(s: Scenario, agents: dict[Party3, Agent], ledger_path: Path | None = Non
                 err = f"agent error: {type(e).__name__}: {e}"
                 raw_rec[f"attempt_{attempt}_error"] = err
                 raw_rec["traceback"] = traceback.format_exc()[-800:]
+                break  # provider failures abstain; they are not formatting repairs
         return None, err or "no response", raw_rec
 
     for rnd in range(1, max_rounds + 1):
         ledger.append("ROUND_START", "ORCHESTRATOR", rnd, {"on_table": current.proposal.key()})
+        # Snapshot before launching any branch. Only judge-validated summaries cross rounds.
         views = {p: build_view(s, p, rnd, current, evals, list(log), last_counter_cost[p]) for p in PARTIES}
         for p in PARTIES:
             ledger.append("VIEW", p, rnd, {"options": [c.summary for c in views[p].options],
@@ -312,7 +333,7 @@ def run(s: Scenario, agents: dict[Party3, Agent], ledger_path: Path | None = Non
                             "verdicts": {k: [v.model_dump() for v in vs] for k, vs in ev.verdicts.items()}})
             log.append(PriorMessage(round=rnd, agent=p, decision=msg.decision,
                                     proposal_key=msg.proposal.key() if msg.proposal else None,
-                                    rationale=msg.rationale, outcome=outcomes[p], detail=detail))
+                                    rationale="", outcome=outcomes[p], detail=detail))
 
         consensus = all(accepted.get(p, False) for p in PARTIES)
         next_eval = None
@@ -343,10 +364,20 @@ def run(s: Scenario, agents: dict[Party3, Agent], ledger_path: Path | None = Non
         final = current
     else:
         final = opt
+    # Never trust a cached feasibility flag at the resolution boundary.
+    final = evaluate(s, final.proposal)
+    if not final.feasible:
+        decision_source, reason = "FALLBACK_SOLVER", "final revalidation failed"
+        fresh = evaluate_all(s)
+        fallback = optimum(s, fresh)
+        final = evaluate(s, fallback.proposal) if fallback else None
+        if final is None or not final.feasible:
+            decision_source, reason, final = "UNRESOLVED", "engine revalidation failure", None
     ledger.append("DECISION", "ORCHESTRATOR", len(rounds), {
-        "decision_source": decision_source, "fallback_reason": reason, "final": final.model_dump(),
+        "decision_source": decision_source, "fallback_reason": reason, "final": final.model_dump() if final else None,
         "fifo_system_cost": fifo.system_cost, "optimum_system_cost": opt.system_cost,
         "requires_human_approval": True,
+        "agent_meta": {p: agents[p].meta() for p in PARTIES},
     })
     out = Outcome(
         scenario_id=s.id, decision_source=decision_source, fallback_reason=reason, final=final,
@@ -376,7 +407,9 @@ def describe_outcome(s: Scenario, o: Outcome) -> str:
     lines.append(describe_eval(s, o.final, "FINAL"))
     lines.append(describe_eval(s, o.fifo, "FIFO "))
     lines.append(describe_eval(s, o.optimum, "OPT  "))
-    lines.append(f"  saving vs FIFO {o.saving_vs_fifo:+,.0f}; gap to optimum {o.gap_vs_optimum:,.0f}; "
+    saving = f"{o.saving_vs_fifo:+,.0f}" if o.saving_vs_fifo is not None else "unavailable"
+    gap = f"{o.gap_vs_optimum:,.0f}" if o.gap_vs_optimum is not None else "unavailable"
+    lines.append(f"  saving vs FIFO {saving}; gap to optimum {gap}; "
                  f"counters {o.counters_attempted} (infeasible caught {o.infeasible_counters_caught}, "
                  f"non-concession {o.non_concessions}); self-violations {o.self_violations}; "
                  f"unfounded rejects {o.unfounded_rejects}; abstains {o.abstains}")
