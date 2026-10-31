@@ -7,6 +7,7 @@ generated in `scenario.py` and labelled there.
 from __future__ import annotations
 
 import math
+import threading
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -37,7 +38,7 @@ def min_to_hhmm(m: int) -> str:
 
 
 @lru_cache(maxsize=1)
-def connect() -> duckdb.DuckDBPyConnection:
+def _root() -> duckdb.DuckDBPyConnection:
     if not FLIGHTS_PARQUET.exists():
         raise FileNotFoundError(f"{FLIGHTS_PARQUET} missing; run scripts/build_parquet.py")
     con = duckdb.connect()
@@ -45,6 +46,18 @@ def connect() -> duckdb.DuckDBPyConnection:
     con.execute(f"CREATE VIEW airports AS SELECT * FROM read_csv_auto('{AIRPORTS_CSV}')")
     con.execute(f"CREATE VIEW airlines AS SELECT * FROM read_csv_auto('{AIRLINES_CSV}')")
     return con
+
+
+_local = threading.local()
+
+
+def connect() -> duckdb.DuckDBPyConnection:
+    """One cursor per thread over the shared in-memory database: a DuckDB connection refuses
+    concurrent calls, and the evaluation and the API build scenarios from several threads."""
+    cur = getattr(_local, "cur", None)
+    if cur is None:
+        cur = _local.cur = _root().cursor()
+    return cur
 
 
 FLIGHT_COLS = [

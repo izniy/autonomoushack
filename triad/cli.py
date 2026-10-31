@@ -30,10 +30,19 @@ def main(argv: list[str] | None = None) -> None:
     ng.add_argument("--stub", nargs="?", const="greedy", metavar="POLICY",
                     help="use deterministic stub agents (greedy|yielding|agreeable|stubborn|reckless|broken|flaky)")
     ng.add_argument("--ledger", help="write the hash-chained ledger to this JSONL path")
+    ng.add_argument("--model", help="model id for the live agents (default TRIAD_MODEL)")
     ng.add_argument("--json", action="store_true", help="print the outcome as JSON")
 
     vf = sub.add_parser("verify", help="verify a ledger file's hash chain")
     vf.add_argument("path")
+
+    ev = sub.add_parser("eval", help="batch-evaluate negotiation arms over the eval seeds")
+    ev.add_argument("--arms", nargs="+", default=["greedy", "yielding", "agreeable", "stubborn"],
+                    help="stub policies and/or llm[:model-id]")
+    ev.add_argument("-n", type=int, default=None, help="number of eval seeds (default config)")
+    ev.add_argument("--seeds", type=int, nargs="+", help="explicit seeds instead of the eval range")
+    ev.add_argument("--tag", help="output folder name under runs/eval/")
+    ev.add_argument("--concurrency", type=int, default=4, help="negotiations run at a time")
 
     args = p.parse_args(argv)
     if args.cmd == "scenario":
@@ -70,7 +79,7 @@ def main(argv: list[str] | None = None) -> None:
         else:
             from .agents import llm_team
 
-            agents = llm_team()
+            agents = llm_team(args.model)
         path = Path(args.ledger) if args.ledger else config.RUNS_DIR / f"{s.id}.ledger.jsonl"
         outcome, ledger = run(s, agents, ledger_path=path)
         if args.json:
@@ -89,6 +98,19 @@ def main(argv: list[str] | None = None) -> None:
         print(("OK" if r.ok else "TAMPERED") + f": {r.entries} entries"
               + (f", first bad seq {r.first_bad_seq}: {r.reason}" if not r.ok else ""))
         raise SystemExit(0 if r.ok else 1)
+    elif args.cmd == "eval":
+        from .eval import run_eval, summary_markdown
+
+        def progress(r: dict) -> None:
+            print(f"  {r['arm']:<10} seed {r['seed']:<5} {r['scenario_id']:<22} {r['decision_source']:<16} "
+                  f"r{r['rounds_used']} gap {r['gap_vs_optimum']:>8,.0f} "
+                  f"{(r['fallback_code'] or ''):<24} {r['wall_s']:.1f}s ${r['usd']:.3f}")
+
+        _rows, summary, out_dir = run_eval(args.arms, n=args.n, seeds=args.seeds, tag=args.tag,
+                                           concurrency=args.concurrency, on_row=progress)
+        print()
+        print(summary_markdown(summary))
+        print(f"\nwritten to {out_dir}")
 
 
 if __name__ == "__main__":

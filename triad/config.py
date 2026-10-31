@@ -63,3 +63,8 @@ ACCEPTANCE_THRESHOLD = float(os.getenv("TRIAD_ACCEPTANCE_THRESHOLD", "0.35"))
 # Disruption filter from the challenge brief.
 WEATHER_DELAY_MIN = 15
 LATE_AIRCRAFT_DELAY_MIN = 20
+
+# Seeds: the demo scenarios are never part of the evaluation range.
+DEMO_SEEDS = [29, 7, 101]
+EVAL_SEED_BASE = 1000
+EVAL_SEEDS_DEFAULT = 30
