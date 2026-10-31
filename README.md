@@ -2,20 +2,45 @@
 
 Cross-organisational disruption negotiation for Airbus Challenge #2 (Autonomous SG 2026).
 
-Three agents — **ATC**, **Pilot/AOC** and **Ground** — negotiate a revised arrival slot, pilot
-action, gate and crew plan for a real delayed flight from the 2015 US DOT on-time dataset.
-The negotiation runs for at most three rounds around a proposal the orchestrator owns; the
-OCC duty manager approves or overrides the result; the system never executes anything.
+When a flight runs late, three organisations argue over it by phone — the ANSP, the operator
+and the airport — each protecting its own numbers, and nobody can prove afterwards why the
+outcome was the one chosen. Delay costs on the order of US$75–100 per aircraft-minute, holding
+burns two tonnes of fuel an hour, and the knock-on reaches the next leg. A-CDM gives these
+parties a shared timetable; it does not give them a way to negotiate.
+
+TRIAD puts **ATC**, **Pilot/AOC** and **Ground** at one table. Three agents negotiate a revised
+arrival slot, pilot action, gate and crew plan for a real delayed flight from the 2015 US DOT
+on-time dataset, in at most three rounds, around a proposal the orchestrator owns. The OCC duty
+manager approves or overrides the result; the system never executes anything.
 
 **Design principle: agents reason, concede and explain; code decides what is legal, what it
 costs, who wins a round, when consensus exists and when to fall back.**
 
+## What sets it apart
+
+Most multi-agent demos let the model decide the outcome. TRIAD does not.
+
+* **Code is the referee.** Legality, cost, the round winner, consensus and fallback are all
+  deterministic. A model can only propose, accept, reject with a rule id, or explain. A
+  hallucinated option is rejected with the rule it breaks; an infeasible counter is caught
+  every time, and the judge's ruling is on the record.
+* **Measured against the truth, not against a story.** Every scenario has a FIFO status quo
+  and a provably optimal solution enumerated from the full decision space. The evaluation runs
+  30 seeded scenarios per arm and publishes the optimality gap, the fallback causes and the
+  arms that lose.
+* **Real data, labelled provenance.** Flights, delays and the next leg come from the DOT
+  record; fuel, gates and crew are synthetic and every field says which it is.
+* **Tamper-evident by construction.** Every message, verdict and human decision is appended
+  to a SHA-256 hash-chained ledger that one command verifies and one command renders as an
+  audit report. A solver fallback is flagged with a coded reason, never silent.
+* **Adversaries built in.** Stubborn, reckless, flaky and crashing agent teams ship with the
+  protocol and prove it holds without any model at all.
+
 ## Why this shape
 
-A late arrival is resolved today by phone calls between three organisations that do not share
-data: the ANSP knows the arrival rate and the separation picture, the operator knows the fuel
-and the connections, the airport knows the stands and the crew clock. Each one optimises
-locally and in sequence, and nobody can later show why the outcome was the one chosen.
+The three organisations do not share data: the ANSP knows the arrival rate and the separation
+picture, the operator knows the fuel and the connections, the airport knows the stands and the
+crew clock. Each one optimises locally and in sequence.
 
 TRIAD keeps those three views private and puts a *shared procedure* between them instead of a
 shared database. Each party's agent sees only its own numbers and the structured decisions of
